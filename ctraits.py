@@ -1329,6 +1329,7 @@ def validate_trait_map(trait, obj, name, value):
 
 
 def validate_trait_prefix_map(trait, obj, name, value):
+    """Verifies a Python value is in a specified prefix map (i.e. dictionary)"""
     type_info = trait._py_validate
     if value in type_info[1]:
         mapped_value = type_info[1][value]
