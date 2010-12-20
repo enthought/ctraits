@@ -1328,6 +1328,16 @@ def validate_trait_map(trait, obj, name, value):
     raise
 
 
+def validate_trait_prefix_map(trait, obj, name, value):
+    type_info = trait._py_validate
+    if value in type_info[1]:
+        mapped_value = type_info[1][value]
+        return mapped_value
+    else:
+        # call validator
+        return type_info[2](obj, name, value)
+
+
 def validate_trait_complex(trait, obj, name, value):
     raise
 
