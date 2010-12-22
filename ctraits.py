@@ -1340,18 +1340,204 @@ def validate_trait_prefix_map(trait, obj, name, value):
 
 
 def validate_trait_complex(trait, obj, name, value):
-    raise
+    """Verifies a Python value satisifies a complex trait definition"""
+    
+    list_type_info = trait._py_validate[1]
+    
+    for type_info in list_type_info:
+        switch = type_info[0]
+        if switch == 0:
+            # type check
+            kind = len(type_info)
+            if (kind == 3 && value == None) || isinstance(value, type_info[-1]):
+                return value
+            break
+        elif switch == 2:
+            # self type check
+            if (len(type_info) == 2 && value is None) || isinstance(value, type(obj))):
+                return value
+            break
+        elif switch == 3:
+            # integer range check
+            if isinstance(value, int):
+                int_value = int(value) # XXX a no-op
+                low, high, exclude_mask = type_info[1:4]
+                if low is not None:
+                    if (exclude_mask & 1) != 0:
+                        if int_value <= int(low):
+                            break
+                    else:
+                        if int_value < int(low):
+                            break
+                if high is not None:
+                    if (exclude_mask & 2) != 0:
+                        if int_value >= int(high):
+                            break
+                    else:
+                        if int_value > int(high):
+                            break
+                return value
+            break
+        elif switch == 4:
+            # floating point range check
+            if not isinstance(value, float):
+                # XXX drop this, and just coerce to float?
+                if not isinstance(value int):
+                    break
+                float_value = value = float(value)
+            else:
+                # XXX dumb conversion from C -> Python here
+                float_value = value
+            low, high, exclude_mask = type_info[1:4]
+            
+            if low is not None:
+                if exclude_mask & 1:
+                    if float_value <= low:
+                        break
+                else:
+                    if float_value < low:
+                        break
+        
+            if high is not None:
+                if exclude_mask & 2:
+                    if float_value >= high:
+                        break
+                else:
+                    if float_value > high:
+                        break
+            return value
+        elif switch == 5:
+            # enumerated item check
+            if value in type_info[1]:
+                return value
+            break
+        elif switch == 6:
+            # mapped item check
+            if value in type_info[1]:
+                return value
+            break
+        elif switch == 8:
+            # Perform 'slow' validate check
+            return type_info[1].slow_validate(obj, name, value)
+        elif switch == 9:
+            # Tuple item check
+            result = validate_trait_tuple_check(type_info[1], obj, name, value)
+            if result is not None:
+                return result
+            break
+        elif switch == 10:
+            # Prefix map item check
+            if value in type_info[1]:
+                return type_info[1][result]
+            
+            # call validator
+            try:
+                return type_info[2](obj, name, value)
+            except Exception:
+                break
+        elif switch == 11:
+            # Coercable type check
+            # XXX this code is largely the same as the underlying type check
+            # should remove duplication/break out into function
+            break
+        elif switch == 12:
+            # Castable type check
+            type = type_info[1]
+            if isinstance(value, type):
+                return value
+            else:
+                return type(value)
+        elif switch == 13:
+            # function validator check
+            result = type_info[1](obj, name, value)
+        # 14 is python validator check
+        # 15-18 are setattr validate checks
+        elif switch == 19:
+            # PyProtocols 'adapt' check
+            # XXX not converting just yet
+            break
+    else:
+        raise
+
+def validate_trait_tuple_check(traits, obj, name, value):
+    """Verifies a Python value is a tuple of a specified type and content"""
+    if isinstance(value, tuple):
+        n = len(traits)
+        tup = None
+        for i in range(n):
+            bitem = value[i]
+            itrait = traits[i]
+            if itrait._validate is None:
+                aitem = bitem
+            else:
+                # shouldn't need to check for NULL return, as will raise instead
+                aitem = itrait._validate(itrait, obj, name, bitem)
+            
+            if tup is not None:
+                tup += (aitem,)
+            else if aitem != bitem:
+                tup = value[:i] + (aitem,)
+                
+        if tup is not None:
+            return tup
+        else:
+            return value
+    # safe to use None as a return value, as value ought to be a tuple instance
+    return None
 
 
 def validate_trait_tuple(trait, obj, name, value):
-    
+    """Verifies a Python value is a tuple of a specified type and content"""
+    result = validate_trait_tuple_check(trait._py_validate[1], obj, name, value)
+    if result is not None:
+        return result
+    raise
 
+    
+def validate_trait_coerce_type(trait, obj, name, value):
+    """Verifies a Python value is of a specified (possibly coercable) type"""
+    type_info = trait._py_validate
+    type = type_info[1]
+    if isinstance(value, type):
+        return value
+    # XXX this is a horrid interface: treat tuple up to None one way, then treat
+    # things after the None a different way - CJW
+    # this is fast C, bad Python
+    for i in range(2, len(type_info)):
+        type2 = type_info[i]
+        if type2 is None:
+            break
+        if isinstance(value, type2):
+            return value
+
+    for j in range(i+1, len(type_info)):
+        type2 = type_info[i]
+        if isinstance(value, type2):
+            return type(value)
+
+    raise
+
+
+def validate_trait_cast_type(trait, obj, name, value):
+    """Verifies a Python value is of a specified (possibly castable) type"""
+    type_info = trait._py_validate
+    type = type_info[1]
+    if isinstance(value, type):
+        return value
+
+    # XXX type converter returns NULL on failure in C code,
+    # I think correct behaviour is to raise an error in this code
+    # we catch here and raise a trait error instead
+    try:
+        return type(value)
+    except Exception:
+        raise
         
 
 validate_handlers = [validate_trait_type, validate_trait_instance,
                      validate_trait_self_type, validate_trait_int,
                      validate_trait_float, validate_trait_enum,
-                     validate_trait_mape, validate_trait_complex,
+                     validate_trait_map, validate_trait_complex,
                      None, validate_trait_tuple, 
                      validate_trait_prefix_map, validate_trait_coerce_type,
                      validate_trait_cast_type, validate_trait_function,
