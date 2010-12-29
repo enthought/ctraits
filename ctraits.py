@@ -412,43 +412,6 @@ class CTraitMethod(object):
 # cTrait type
 #------------------------------------------------------------------------------
 
-getattr_handlers = [getattr_trait, getattr_python, getattr_event,
-                    getattr_delegate, getattr_event, getattr_disallow,
-                    getattr_trait, getattr_constant, getattr_generic]
-
-
-setattr_handlers = [setattr_trait, setattr_python, setattr_event,
-                    setattr_delegate, setattr_event, setattr_disallow,
-                    setattr_readonly, setattr_constant, setattr_generic]
-
-
-getattr_property_handlers = [getattr_property0, getattr_property1,
-                             getattr_property2, getattr_property3]
-
-setattr_property_handlers = [setattr_property0, setattr_property1, 
-                             setattr_property2, setattr_property3, 
-                             post_setattr_trait_python, None]
-
-setattr_validate_handlers = [setattr_validate0, setattr_validate1,
-                             setattr_validate2, setattr_validate3]
-
-validate_handlers = [validate_trait_type, validate_trait_instance,
-                     validate_trait_self_type, validate_trait_int,
-                     validate_trait_float, validate_trait_enum,
-                     validate_trait_mape, validate_trait_complex,
-                     None, validate_trait_tuple, 
-                     validate_trait_prefix_map, validate_trait_coerce_type,
-                     validate_trait_cast_type, validate_trait_function,
-                     validate_trait_python, setattr_validate0,
-                     setattr_validate1, setattr_validate2, 
-                     setattr_validate3, validate_trait_adapt]
-
-delegate_attr_name_handlers = [delegate_attr_name_name, 
-                               delegate_attr_name_prefix,
-                               delegate_attr_name_prefix_name,
-                               delegate_attr_name_class_name,
-                               None]
-
 
 class cTrait(object):
     
@@ -568,7 +531,7 @@ class cTrait(object):
             if n > 0:
                 kind = int(validate[0])
                 if kind == 0:
-                    if ((n <= 3) and isinstance(validate[-1], type)) and 
+                    if ((n <= 3) and isinstance(validate[-1], type)) and \
                        ((n == 2) or (validate[1] == None)):
                         return done()
                 elif kind == 1:
@@ -580,15 +543,15 @@ class cTrait(object):
                 elif kind == 3:
                     if n == 4:
                         v1, v2, v3 = validate[1:4]
-                        if ((v1 is None) or isinstance(v1, int)) and
-                           ((v2 is None) or isinstance(v2, int)) and
+                        if ((v1 is None) or isinstance(v1, int)) and \
+                           ((v2 is None) or isinstance(v2, int)) and \
                            isinstance(v3, int):
                             return done()
                 elif kind == 4:
                     if n == 4:
                         v1, v2, v3 = validate[1:4]
-                        if ((v1 is None) or isinstance(v1, float)) and
-                           ((v2 is None) or isinstance(v2, float)) and
+                        if ((v1 is None) or isinstance(v1, float)) and \
+                           ((v2 is None) or isinstance(v2, float)) and \
                            isinstance(v3, int):
                             return done()
                 elif kind == 5:
@@ -613,7 +576,7 @@ class cTrait(object):
                         if isinstance(validate[1], dict):
                             return done()
                 elif kind == 11:
-                    if n >-= 2:
+                    if n >= 2:
                         return done()
                 elif kind == 12:
                     if n == 2:
@@ -625,7 +588,7 @@ class cTrait(object):
                 # no 14 - 18
                 elif kind == 19:
                     if n == 4:
-                        if isinstance(validate[2], int) and 
+                        if isinstance(validate[2], int) and \
                            isinstance(validate[3], bool):
                             return done()
         
@@ -712,7 +675,7 @@ class cTrait(object):
         else:
             self._flags &= (~TRAIT_IS_MAPPED)
 
-    def property(self, *args):
+    def _property(self, *args):
         """ _trait_property """
         if not args:
             return self._delegate_name, self._delegate_prefix, self._py_validate
@@ -755,11 +718,11 @@ class cTrait(object):
             obj = None
             name = None
             value = args[0]
-        elif n_args = 2:
+        elif n_args == 2:
             name = None
             obj = args[0]
             value = args[1]
-        elif n_args = 3:
+        elif n_args == 3:
             obj = args[0]
             name = args[1]
             value = args[2]
@@ -813,7 +776,7 @@ class cTrait(object):
         """ set_trait_handler """
         self._handler = value
 
-    handler = property(_get_trait_hander, _set_trait_handler)
+    handler = property(_get_trait_handler, _set_trait_handler)
 
     def _get_trait_post_setattr(self):
         """ get_trait_post_setattr """
@@ -962,7 +925,7 @@ def getattr_trait(trait, obj, name):
     res = default_value_for(trait, obj, name)
     dct[name] = res
     
-    if (trait._post_setattr is not None) and 
+    if (trait._post_setattr is not None) and \
        ((trait._flags & TRAIT_IS_MAPPED) == 0):
         trait._post_setattr(trait, obj, name, res)
 
@@ -1213,18 +1176,30 @@ def post_setattr_trait_python(trait, obj, name, value):
 
     
 def setattr_validate0(trait, obj, name, value):
+    """Validates then assigns a value to a specified property trait attribute
+    
+    This is the 0 argument version."""
     trait._py_validate()
 
 
 def setattr_validate1(trait, obj, name, value):
+    """Validates then assigns a value to a specified property trait attribute
+    
+    This is the 1 argument version."""
     trait._py_validate(value)
 
 
 def setattr_validate2(trait, obj, name, value):
+    """Validates then assigns a value to a specified property trait attribute
+    
+    This is the 2 argument version."""
     trait._py_validate(obj, value)
 
 
 def setattr_validate3(trait, obj, name, value):
+    """Validates then assigns a value to a specified property trait attribute
+    
+    This is the full argument version."""
     trait._py_validate(obj, name, value)
 
 
@@ -1349,12 +1324,12 @@ def validate_trait_complex(trait, obj, name, value):
         if switch == 0:
             # type check
             kind = len(type_info)
-            if (kind == 3 && value == None) || isinstance(value, type_info[-1]):
+            if (kind == 3 and value == None) or isinstance(value, type_info[-1]):
                 return value
             break
         elif switch == 2:
             # self type check
-            if (len(type_info) == 2 && value is None) || isinstance(value, type(obj))):
+            if (len(type_info) == 2 and value is None) or isinstance(value, type(obj)):
                 return value
             break
         elif switch == 3:
@@ -1382,7 +1357,7 @@ def validate_trait_complex(trait, obj, name, value):
             # floating point range check
             if not isinstance(value, float):
                 # XXX drop this, and just coerce to float?
-                if not isinstance(value int):
+                if not isinstance(value, int):
                     break
                 float_value = value = float(value)
             else:
@@ -1475,7 +1450,7 @@ def validate_trait_tuple_check(traits, obj, name, value):
             
             if tup is not None:
                 tup += (aitem,)
-            else if aitem != bitem:
+            elif aitem != bitem:
                 tup = value[:i] + (aitem,)
                 
         if tup is not None:
@@ -1532,7 +1507,25 @@ def validate_trait_cast_type(trait, obj, name, value):
         return type(value)
     except Exception:
         raise
-        
+
+
+def validate_trait_function(trait, obj, name, value):
+    """Verifies a Python value satisifies a specified function validator"""
+    # XXX NULL return should signal error, what is appropriate python idiom?
+    try:
+        return trait._py_validate[1](obj, name, value)
+    except Exception:
+        raise
+
+
+def validate_trait_python(trait, obj, name, value):
+    """Calls a Python-based trait validator"""
+    return trait._py_validate(obj, name, value)
+    
+    
+def validate_trait_adapt(trait, obj, name, value):
+    # XXX not implimented
+    raise
 
 validate_handlers = [validate_trait_type, validate_trait_instance,
                      validate_trait_self_type, validate_trait_int,
@@ -1568,3 +1561,48 @@ def delegate_attr_name_class_name(trait, obj, name):
         return name
 
     return prefix + name
+
+#--------------
+# Handler lists
+#--------------
+
+getattr_handlers = [getattr_trait, getattr_python, getattr_event,
+                    getattr_delegate, getattr_event, getattr_disallow,
+                    getattr_trait, getattr_constant, getattr_generic]
+
+
+setattr_handlers = [setattr_trait, setattr_python, setattr_event,
+                    setattr_delegate, setattr_event, setattr_disallow,
+                    setattr_readonly, setattr_constant, setattr_generic]
+
+
+getattr_property_handlers = [getattr_property0, getattr_property1,
+                             getattr_property2, getattr_property3]
+
+setattr_property_handlers = [setattr_property0, setattr_property1, 
+                             setattr_property2, setattr_property3, 
+                             post_setattr_trait_python, None]
+
+setattr_validate_handlers = [setattr_validate0, setattr_validate1,
+                             setattr_validate2, setattr_validate3]
+
+validate_handlers = [validate_trait_type, validate_trait_instance,
+                     validate_trait_self_type, validate_trait_int,
+                     validate_trait_float, validate_trait_enum,
+                     validate_trait_map, validate_trait_complex,
+                     None, validate_trait_tuple, 
+                     validate_trait_prefix_map, validate_trait_coerce_type,
+                     validate_trait_cast_type, validate_trait_function,
+                     validate_trait_python, setattr_validate0,
+                     setattr_validate1, setattr_validate2, 
+                     setattr_validate3, validate_trait_adapt]
+
+delegate_attr_name_handlers = [delegate_attr_name_name, 
+                               delegate_attr_name_prefix,
+                               delegate_attr_name_prefix_name,
+                               delegate_attr_name_class_name,
+                               None]
+
+# Init
+
+_HasTraits_monitors = []
