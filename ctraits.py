@@ -56,9 +56,9 @@ class CHasTraits(object):
     
     def __new__(cls, *args, **kwargs):
         has_traits_obj = super(CHasTraits, cls).__new__(cls)
-        has_traits_obj._obj_dict = {}      # this can probaly be trashed along with the __dict__ property
-        has_traits_obj._itrait_dict = {}
-        has_traits_obj._ctrait_dict = cls.__dict__[class_traits]
+        super(CHasTraits, has_traits_obj).__setattr__('_obj_dict', {})      # this can probaly be trashed along with the __dict__ property
+        super(CHasTraits, has_traits_obj).__setattr__('_itrait_dict', {})
+        super(CHasTraits, has_traits_obj).__setattr__('_ctrait_dict', cls.__dict__[class_traits])
         has_traits_obj._notifiers_ = []
         has_traits_obj._flags = 0x00000000
         return has_traits_obj
