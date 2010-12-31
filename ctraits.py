@@ -44,6 +44,9 @@ TraitListObject = None
 TraitSetObject = None
 TraitDictObject = None
 
+# Init
+
+_HasTraits_monitors = []
 
 #------------------------------------------------------------------------------
 # CHasTraits type
@@ -53,10 +56,10 @@ class CHasTraits(object):
     
     def __new__(cls, *args, **kwargs):
         has_traits_obj = super(CHasTraits, cls).__new__(cls)
-        has_traits_obj._ctrait_dict = cls.__dict__[class_traits]
-        has_traits_obj._itrait_dict = {}
         has_traits_obj._obj_dict = {}      # this can probaly be trashed along with the __dict__ property
-        has_traits_obj._notifiers = []
+        has_traits_obj._itrait_dict = {}
+        has_traits_obj._ctrait_dict = cls.__dict__[class_traits]
+        has_traits_obj._notifiers_ = []
         has_traits_obj._flags = 0x00000000
         return has_traits_obj
 
@@ -175,7 +178,7 @@ class CHasTraits(object):
         return self._itrait_dict
 
     def _notifiers(self, force_create=None):
-        return self._notifiers
+        return self._notifiers_
 
     def _trait_change_notify(self, enabled=False):
         if enabled:
@@ -414,6 +417,8 @@ class CTraitMethod(object):
 
 
 class cTrait(object):
+
+    base_property = property
     
     def __init__(self, kind):
         """ trait_init """
@@ -428,10 +433,32 @@ class cTrait(object):
         
         self._getattr = getattr_handlers[kind]
         self._setattr = setattr_handlers[kind]
+        
+        self._post_setattr = None
+        self._validate = None
+        self._delegate_attr_name = None
+        
+        self._py_post_setattr = None
+        self._py_validate = None
+        self._default_value_type = None
+        self._default_value = None
+        self._flags = 0x00000000
+        self._delegate_name = None
+        self._delegate_prefix = None
+        self._handler = None
+        self._obj_dict = {}
     
+
     def __getattribute__(self, name):
-        """ trait_getattro """
-        return object.__getattribute__(self, name)
+        _obj_dict = object.__getattribute__(self, '_obj_dict')
+        if name in _obj_dict:
+            return _obj_dict[name]
+
+        try:
+            res = object.__getattribute__(self, name)
+            return res
+        except AttributeError:
+            pass
 
     def __getstate__(self):
         """ _trait_getstate """
@@ -675,7 +702,7 @@ class cTrait(object):
         else:
             self._flags &= (~TRAIT_IS_MAPPED)
 
-    def _property(self, *args):
+    def property(self, *args):
         """ _trait_property """
         if not args:
             return self._delegate_name, self._delegate_prefix, self._py_validate
@@ -748,11 +775,11 @@ class cTrait(object):
 
     def _notifiers(self, force_create):
         """ _trait_notifiers """
-        res = self._notifiers
+        res = self._notifiers_
 
         if res is None and force_create:
             res = []
-            self._notifiers = res
+            self._notifiers_ = res
 
         return res
 
@@ -766,7 +793,7 @@ class cTrait(object):
             raise TypeError("value must be a dictionary.")
         self._obj_dict = value
 
-    __dict__ = property(_get_trait_dict, _set_trait_dict)
+    __dict__ = base_property(_get_trait_dict, _set_trait_dict)
 
     def _get_trait_handler(self):
         """ get_trait_handler """
@@ -776,7 +803,7 @@ class cTrait(object):
         """ set_trait_handler """
         self._handler = value
 
-    handler = property(_get_trait_handler, _set_trait_handler)
+    handler = base_property(_get_trait_handler, _set_trait_handler)
 
     def _get_trait_post_setattr(self):
         """ get_trait_post_setattr """
@@ -789,7 +816,7 @@ class cTrait(object):
         self._post_setattr = post_setattr_trait_python
         self._py_post_setattr = value
 
-    post_setattr = property(_get_trait_post_setattr, _set_trait_post_setattr)
+    post_setattr = base_property(_get_trait_post_setattr, _set_trait_post_setattr)
 
 
 
@@ -929,8 +956,8 @@ def getattr_trait(trait, obj, name):
        ((trait._flags & TRAIT_IS_MAPPED) == 0):
         trait._post_setattr(trait, obj, name, res)
 
-    tnotifiers = trait._notifiers
-    onotifiers = obj._notifiers
+    tnotifiers = trait._notifiers_
+    onotifiers = obj._notifiers_
     if has_notifiers(tnotifiers, onotifiers):
         call_notifiers(tnotifiers, onotifiers, obj, name, Unitialized, res)
 
@@ -1003,8 +1030,8 @@ def setattr_trait(traito, traitd, obj, name, value):
         old_value = dct.pop(name)
 
         if (obj._flags & HASTRAITS_NO_NOTIFY) == 0:
-            tnotifiers = traito._notifiers
-            onotifiers = obj._notifiers
+            tnotifiers = traito._notifiers_
+            onotifiers = obj._notifiers_
             if (tnotifiers is not None) or (onotifiers is not None):
                 value = traito._getattr(traito, obj, name)
                 if not changed:
@@ -1034,8 +1061,8 @@ def setattr_trait(traito, traitd, obj, name, value):
 
     old_value = None
 
-    tnotifiers = traito._notifiers
-    onotifiers = obj._notifiers
+    tnotifiers = traito._notifiers_
+    onotifiers = obj._notifiers_
     do_notifiers = has_notifiers(tnotifiers, onotifiers)
 
     post_setattr = traitd._post_setattr
@@ -1079,8 +1106,8 @@ def setattr_event(traito, traitd, obj, name, value):
     if traitd._validate is not None:
         value = trait._validate(traitd, obj, name, value)
 
-    tnotifiers = traito._notifiers
-    onotifiers = obj._notifiers
+    tnotifiers = traito._notifiers_
+    onotifiers = obj._notifiers_
 
     if has_notifiers(tnotifiers, onotifiers):
         call_notifiers(tnotifiers, onotifiers, obj, name, Undefined, value)
@@ -1603,6 +1630,3 @@ delegate_attr_name_handlers = [delegate_attr_name_name,
                                delegate_attr_name_class_name,
                                None]
 
-# Init
-
-_HasTraits_monitors = []
