@@ -96,7 +96,7 @@ class CHasTraits(object):
                  self._ctrait_dict.get(name) or
                  get_prefix_trait(self, name, 1))
 
-        if ((trait.flags & TRAIT_VALUE_ALLOWED) and
+        if ((trait._flags & TRAIT_VALUE_ALLOWED) and
             isinstance(trait, TraitValue)):
             setattr_value(trait, self, name, value)
         else:
@@ -943,6 +943,66 @@ def trait_clone(trait, source):
     trait._handler = source._handler
 
 
+def get_trait(obj, name, instance):
+    """Returns (and optionally creates) a specified instance or class trait"""
+
+    # If there already is an instance specific version of the requested trait,
+    # then return it
+    if name in obj._itrait_dict:
+        trait = obj._itrait_dict[name]
+
+    # If only an instance trait can be returned (but not created), then 
+    # return None
+    elif instance:
+        return None
+    
+    # Otherwise, get the class specific version of the trait (creating a
+    # trait class version if necessary)
+    if name in obj._ctrait_dict:
+        trait = obj._ctrait_dict[name]
+    elif not instance:
+        return None
+    else:
+        trait = get_prefix_trait(obj, name, False)
+    
+    # If an instance specific trait is not needed, return the class trait
+    if not instance:
+        return trait
+    
+    # Otherwise, create an instance trait dictionary if it does not exist
+    # XXX I think we are guaranteed instance dict
+    
+    # Create a new instance trait and clone the class trait into it
+    itrait = cTrait(0)
+    trait_clone(itrait, trait)
+    itrait._obj_dict = trait._obj_dict
+    
+    # Copy the class trait's notifier list into the instance trait
+    itrait._notifiers_ = trait._notifiers_[:]
+    
+    # Add the instance trait to the instance's trait dictionary and return
+    # the instance trait if successful
+    obj._itrait_dict[name] = itrait
+    return itrait
+    
+
+def get_prefix_trait (obj, name, is_set):
+    """Gets the definition of the matching prefix based trait for a specified name:
+        - This should always return a trait definition unless a fatal Python error
+          occurs.
+        - The bulk of the work is delegated to a Python implemented method because
+          the implementation is complicated in C and does not need to be executed
+          very often relative to other operations.
+    """
+    
+    trait = obj.__prefix_trait__(name, is_set)
+    if trait is not None:
+        obj._ctrait_dict[name] = trait
+        setattr(obj, trait_added, name)
+        trait = get_trait(obj, name, False)
+    return trait
+
+
 #-----------------
 # getattr handlers
 #-----------------
@@ -1104,7 +1164,7 @@ def setattr_python(traito, traitd, obj, name, value):
 
 def setattr_event(traito, traitd, obj, name, value):
     if traitd._validate is not None:
-        value = trait._validate(traitd, obj, name, value)
+        value = traitd._validate(traitd, obj, name, value)
 
     tnotifiers = traito._notifiers_
     onotifiers = obj._notifiers_
