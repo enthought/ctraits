@@ -1009,6 +1009,36 @@ def get_prefix_trait (obj, name, is_set):
 def has_notifiers(tnotifiers, onotifiers):
     return tnotifiers and onotifiers
 
+
+def call_notifiers(tnotifiers, onotifiers, obj, name, old_value, new_value):
+    """Call all notifiers for a specified trait"""
+    new_value_has_traits = isinstance(new_value, CHasTraits)
+    args = (obj, name, old_value, new_value)
+    
+    # Do nothing if the user has explicitly requested no traits notifications
+    # to be sent
+    if obj._flags & HASTRAITS_NO_NOTIFY:
+        return
+    
+    tnotifiers = tnotifiers[:] # XXX why copy?
+    for notifier in tnotifiers:
+        if new_value_has_traits and new_value._flags & HASTRAITS_VETO_NOTIFY:
+            return
+        if trait_notification_handler is not None:
+            result = trait_notification_handler(notifier, args)
+        else:
+            result = notifier(*args)
+    
+    onotifiers = onotifiers[:]
+    for notifier in onotifiers:
+        if new_value_has_traits and new_value._flags & HASTRAITS_VETO_NOTIFY:
+            return
+        if trait_notification_handler is not None:
+            result = trait_notification_handler(notifier, args)
+        else:
+            result = notifier(*args)
+    
+
 #-----------------
 # getattr handlers
 #-----------------
