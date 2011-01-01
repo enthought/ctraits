@@ -1299,15 +1299,15 @@ def setattr_property1(traito, traitd, obj, name, value):
 
 
 def setattr_property2(traito, traitd, obj, name, value):
-   if value is None: # XXX - what semantics do we want for deletion. It's a NULL PyObject* in C
+    if value is None: # XXX - what semantics do we want for deletion. It's a NULL PyObject* in C
         set_delete_property_error(obj, name)
     traitd._delegate_prefix(obj, value)
 
 
 def setattr_property3(traito, traitd, obj, name, value):
-   if value is None: # XXX - what semantics do we want for deletion. It's a NULL PyObject* in C
+    if value is None: # XXX - what semantics do we want for deletion. It's a NULL PyObject* in C
         set_delete_property_error(obj, name)
-   traitd._delegate_prefix(obj, name, value)
+    traitd._delegate_prefix(obj, name, value)
 
 
 def post_setattr_trait_python(trait, obj, name, value):
