@@ -202,21 +202,21 @@ class CHasTraits(object):
         if not isinstance(name, basestring):
             invalid_attribute_error()
 
-        trait = obj._itrait_dict.get(name) or obj._ctrait_dict.get(name)
+        trait = self._itrait_dict.get(name) or self._ctrait_dict.get(name)
 
         if trait is None:
-            obj.add_trait(name, event_trait)
-            trait = obj._itrait_dict.get(name) or obj._ctrait_dict.get(name)
+            self.add_trait(name, event_trait)
+            trait = self._itrait_dict.get(name) or self._ctrait_dict.get(name)
             if trait is None:
                 cant_set_items_error()
 
         if trait._setattr is setattr_disallow:
-            obj.add_trait(name, event_trait)
-            trait = obj._itrait_dict.get(name) or obj._ctrait_dict.get(name)
+            self.add_trait(name, event_trait)
+            trait = self._itrait_dict.get(name) or self._ctrait_dict.get(name)
             if trait is None:
                 cant_set_items_error()
 
-        trait._setattr(trait, trait, obj, name, event_object)
+        trait._setattr(trait, trait, self, name, event_obj)
 
     def traits_init(self):
         pass
@@ -636,7 +636,7 @@ class cTrait(object):
             return value
         return self._validate(self, obj, name, value)
 
-    def delegate(self, delegate_name, prefix, prefix_type, modify_delegate):
+    def delegate(self, delegate_name, delegate_prefix, prefix_type, modify_delegate):
         """ _trait_delegate """
         if modify_delegate:
             self._flags |= TRAIT_MODIFY_DELEGATE
@@ -956,20 +956,20 @@ def get_trait(obj, name, instance):
 
     # If only an instance trait can be returned (but not created), then 
     # return None
-    elif instance:
+    elif instance == 1:
         return None
     
     # Otherwise, get the class specific version of the trait (creating a
     # trait class version if necessary)
     if name in obj._ctrait_dict:
         trait = obj._ctrait_dict[name]
-    elif not instance:
+    elif instance == 0:
         return None
     else:
         trait = get_prefix_trait(obj, name, False)
     
     # If an instance specific trait is not needed, return the class trait
-    if not instance:
+    if instance <= 0:
         return trait
     
     # Otherwise, create an instance trait dictionary if it does not exist
@@ -1296,9 +1296,17 @@ def setattr_validate3(trait, obj, name, value):
     trait._py_validate(obj, name, value)
 
 
+def setattr_validate_property(traito, traitd, obj, name, value):
+    """Validates then assigns a value to a specified property trait attribute"""
+    validated = traitd._validate(traitd, obj, name, value)
+    result = traitd._post_setattr(traito, traitd, obj, name, validated)
+    return result
+
+
 #--------------------
 # Validation Handlers
 #--------------------
+
 def validate_trait_type(trait, obj, name, value):
     type_info = trait._py_validate
     kind = len(type_info)
@@ -1571,17 +1579,20 @@ def validate_trait_coerce_type(trait, obj, name, value):
     # XXX this is a horrid interface: treat tuple up to None one way, then treat
     # things after the None a different way - CJW
     # this is fast C, bad Python
-    for i in range(2, len(type_info)):
+    idx = 2
+    coerce = False
+    
+    while idx < len(type_info):
         type2 = type_info[i]
-        if type2 is None:
-            break
-        if isinstance(value, type2):
-            return value
-
-    for j in range(i+1, len(type_info)):
-        type2 = type_info[i]
-        if isinstance(value, type2):
-            return type(value)
+        if coerce:
+            if isinstance(value, type2):
+                return type(value)
+        else:
+            if type2 is None:
+                coerce = True
+                continue
+            if isinstance(value, type2):
+                return value
 
     raise
 
