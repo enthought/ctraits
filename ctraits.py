@@ -165,7 +165,8 @@ class CHasTraits(object):
 
             trait = (delegate._itrait_dict.get(daname) or
                      delegate._ctrait_dict.get(daname) or
-                     get_prefix_trait(delegate, daname2, 0))
+                     get_prefix_trait(delegate, daname2, 0) or
+                     bad_delegate_error(self, name)) # XXX - should change this to 'in' checks
 
             if not isinstance(trait, ctrait_type):
                 fatal_trait_error()
@@ -237,7 +238,7 @@ class CHasTraits(object):
 
     def set_has_traits_dict(self, value):
         if not isinstance(value, dict):
-            raise TypeError('value must be a dictionary.')
+            dictionary_error()
         self._obj_dict = value
 
     __dict__ = property(get_has_traits_dict, set_has_traits_dict)
@@ -326,6 +327,10 @@ class CTraitMethod(object):
         return hash(tm_self) ^ hash(tm_func)
 
     def __call__(self, *args, **kwargs):
+        # XXX - the C code for this function was horrible.
+        # So the layout has departed quite a bit from the 
+        # original and the error handling has therefore changed.
+
         tm_self = object.__getattribute__(self, 'tm_self')
         tm_func = object.__getattribute__(self, 'tm_func')
         tm_name = object.__getattribute__(self, 'tm_name')
@@ -422,15 +427,13 @@ class cTrait(object):
     
     def __init__(self, kind):
         """ trait_init """
-
-        # XXX - should be bad_trait_error() instead of these exceptions
         
         if not isinstance(kind, int):
-            raise ValueError('`kind` must be an integer.')
+            bad_trait_error()
 
         if kind < 0  or kind > 8:
-            raise ValueError('`kind` must be betweeen 0 and 8 inclusive.')
-        
+            bad_trait_error()
+
         self._getattr = getattr_handlers[kind]
         self._setattr = setattr_handlers[kind]
         
@@ -793,7 +796,7 @@ class cTrait(object):
     def _set_trait_dict(self, value):
         """ set_trait_dict """
         if not isinstance(value, dict):
-            raise TypeError("value must be a dictionary.")
+            dictionary_error()
         self._obj_dict = value
 
     __dict__ = base_property(_get_trait_dict, _set_trait_dict)
@@ -1079,9 +1082,7 @@ def getattr_delegate(trait, obj, name):
 
 
 def getattr_disallow(trait, obj, name):
-    raise AttributeError("'%s' object has no attribute '%s'" 
-                         % (obj.__class__.__name__, name))
-
+    unknown_attribute_error(obj, name)
 
 def getattr_constant(trait, obj, name):
     return trait._default_value
@@ -1110,6 +1111,10 @@ def getattr_property3(trait, obj, name):
 #-----------------
 # setattr handlers
 #-----------------
+def setattr_value(*args):
+    raise NotImplementedError("implement me!")
+
+
 def setattr_trait(traito, traitd, obj, name, value):
     dct = obj._obj_dict
 
@@ -1117,7 +1122,7 @@ def setattr_trait(traito, traitd, obj, name, value):
     
     # XXX - get rid of this closure which replaces a goto
     def notify():
-             return
+        return
 
     if value is None:
         if name not in dct:
@@ -1194,6 +1199,9 @@ def setattr_trait(traito, traitd, obj, name, value):
 
 
 def setattr_python(traito, traitd, obj, name, value):
+    # XXX - the C code for this uses a NULL pointer for value
+    # to indicate that the attribute should be deleted from the dict.
+    # What should we do here?
     dct = obj._obj_dict
     dct[name] = value
 
@@ -1221,7 +1229,7 @@ def setattr_delegate(traito, traitd, obj, name, value):
             delegate = getattr(delegate, traitd._delegate_name)
 
         if not isinstance(delegate, CHasTraits):
-            raise TypeError("Bad delegate.")
+            bad_delegate_error2(obj, name)
 
         daname = traitd._delegate_attr_name(traitd, obj, daname)
         
@@ -1232,9 +1240,11 @@ def setattr_delegate(traito, traitd, obj, name, value):
                 traitd = delegate._ctrait_dict[daname]
             else:
                 traitd = get_prefix_trait(delegate, daname, 1)
-
+                if traitd is None: # XXX - can this ever happen?
+                    bad_delegate_error(obj, name)
+                    
         if type(traitd) is not ctrait_type:
-            raise TypeError("Trait of wrong type.")
+            fatal_trait_error()
 
         if traitd._delegate_attr_name is not None:
             if traito._flags & TRAIT_MODIFY_DELEGATE:
@@ -1248,26 +1258,24 @@ def setattr_delegate(traito, traitd, obj, name, value):
 
         i += 1
         if i >= 100:
-            raise ValueError("Delegation recursion error.")
+            delegation_recursion_error(obj, name)
 
 
 def setattr_disallow(traito, traitd, obj, name, value):
-    raise TraitError("Cannot set the undefined '%s' attribute of a '%s' object."
-                     % (name, obj.__class__.__name__))
-
+    set_disallow_error(obj, name)
 
 def setattr_readonly(traito, traitd, obj, name, value):
-    if traitd._default_value != Undefined:
-        raise TraitError("Cannot set the undefined '%s' attribute of a '%s' "
-                         "object." % (name, obj.__class__.__name__))
+    if value is None: # XXX - what semantics do we want for deletion. It's a NULL PyObject* in C
+        delete_readonly_error(obj, name)
 
-    dct = obj.__dict__
+    if traitd._default_value != Undefined:
+        set_readonly_error(obj, name)
+
+    dct = obj._obj_dict
     if (name not in dct) or (dct[name] == Undefined):
         setattr_python(traito, traitd, obj, name, value)
     else:
-        raise TraitError("Cannot set the undefined '%s' attribute of a '%s' "
-                         "object." % (name, obj.__class__.__name__))
-
+        set_readonly_error(obj, name)
 
 def setattr_constant(traito, traitd, obj, name, value):
     raise TraitError("Cannot modify the constant '%s' attribute of a '%s' "
@@ -1279,19 +1287,27 @@ def setattr_generic(traito, traitd, obj, name, value):
 
 
 def setattr_property0(traito, traitd, obj, name, value):
+    if value is None: # XXX - what semantics do we want for deletion. It's a NULL PyObject* in C
+        set_delete_property_error(obj, name)
     traitd._delegate_prefix()
 
 
 def setattr_property1(traito, traitd, obj, name, value):
+    if value is None: # XXX - what semantics do we want for deletion. It's a NULL PyObject* in C
+        set_delete_property_error(obj, name)
     traitd._delegate_prefix(value)
 
 
 def setattr_property2(traito, traitd, obj, name, value):
+   if value is None: # XXX - what semantics do we want for deletion. It's a NULL PyObject* in C
+        set_delete_property_error(obj, name)
     traitd._delegate_prefix(obj, value)
 
 
 def setattr_property3(traito, traitd, obj, name, value):
-    traitd._delegate_prefix(obj, name, value)
+   if value is None: # XXX - what semantics do we want for deletion. It's a NULL PyObject* in C
+        set_delete_property_error(obj, name)
+   traitd._delegate_prefix(obj, name, value)
 
 
 def post_setattr_trait_python(trait, obj, name, value):
@@ -1342,7 +1358,7 @@ def validate_trait_type(trait, obj, name, value):
     kind = len(type_info)
     if (kind == 3 and value is None) or (type(value) is type_info[-1]):
         return value
-    raise
+    raise_trait_error(trait, obj, name, value)
 
 
 def validate_trait_instance(trait, obj, name, value):
@@ -1351,7 +1367,7 @@ def validate_trait_instance(trait, obj, name, value):
 
     if (kind == 3 and value is None) or isinstance(value, type_info[-1]):
         return value
-    raise
+    raise_trait_error(trait, obj, name, value)
 
 
 def validate_trait_self_type(trait, obj, name, value):
@@ -1360,7 +1376,7 @@ def validate_trait_self_type(trait, obj, name, value):
 
     if (kind == 2 and value is None) or (value is type(obj)):
         return value
-    raise
+    raise_trait_error(trait, obj, name, value)
 
 
 def validate_trait_int(trait, obj, name, value):
@@ -1388,7 +1404,7 @@ def validate_trait_int(trait, obj, name, value):
 
         return value
 
-    raise
+    raise_trait_error(trait, obj, name, value)
 
 
 def validate_trait_float(trait, obj, name, value):
@@ -1396,7 +1412,7 @@ def validate_trait_float(trait, obj, name, value):
 
     if not isinstance(value, float):
         if not isinstance(value, int):
-            raise
+            raise_trait_error(trait, obj, name, value)
         value = float(value)
 
     low, high, exclude_mask = type_info[1:4]
@@ -1404,18 +1420,18 @@ def validate_trait_float(trait, obj, name, value):
     if low is not None:
         if exclude_mask & 1:
             if value <= low:
-                raise
+                raise_trait_error(trait, obj, name, value)
         else:
             if value < low:
-                raise
+                raise_trait_error(trait, obj, name, value)
 
     if high is not None:
         if exclude_mask & 2:
             if float_value >= high:
-                raise
+                raise_trait_error(trait, obj, name, value)
         else:
             if float_value > high:
-                raise
+                raise_trait_error(trait, obj, name, value)
 
     return value
 
@@ -1424,14 +1440,14 @@ def validate_trait_enum(trait, obj, name, value):
     type_info = trait._py_validate
     if value in type_info[1]:
         return value
-    raise
+    raise_trait_error(trait, obj, name, value)
 
 
 def validate_trait_map(trait, obj, name, value):
     type_info = trait._py_validate
     if value in type_info[1]:
         return value
-    raise
+    raise_trait_error(trait, obj, name, value)
 
 
 def validate_trait_prefix_map(trait, obj, name, value):
@@ -1563,7 +1579,7 @@ def validate_trait_complex(trait, obj, name, value):
             # XXX not converting just yet
             break
     else:
-        raise
+        raise_trait_error(trait, obj, name, value)
 
 def validate_trait_tuple_check(traits, obj, name, value):
     """Verifies a Python value is a tuple of a specified type and content"""
@@ -1597,7 +1613,7 @@ def validate_trait_tuple(trait, obj, name, value):
     result = validate_trait_tuple_check(trait._py_validate[1], obj, name, value)
     if result is not None:
         return result
-    raise
+    raise_trait_error(trait, obj, name, value)
 
     
 def validate_trait_coerce_type(trait, obj, name, value):
@@ -1624,7 +1640,7 @@ def validate_trait_coerce_type(trait, obj, name, value):
             if isinstance(value, type2):
                 return value
 
-    raise
+    raise_trait_error(trait, obj, name, value)
 
 
 def validate_trait_cast_type(trait, obj, name, value):
@@ -1640,7 +1656,7 @@ def validate_trait_cast_type(trait, obj, name, value):
     try:
         return type(value)
     except Exception:
-        raise
+        raise_trait_error(trait, obj, name, value)
 
 
 def validate_trait_function(trait, obj, name, value):
@@ -1649,7 +1665,7 @@ def validate_trait_function(trait, obj, name, value):
     try:
         return trait._py_validate[1](obj, name, value)
     except Exception:
-        raise
+        raise_trait_error(trait, obj, name, value)
 
 
 def validate_trait_python(trait, obj, name, value):
@@ -1664,7 +1680,7 @@ def validate_trait_adapt(trait, obj, name, value):
     if value is None:
         if type_info[3]:
             return value
-        raise # raise_trait_error
+        raise_trait_error(trait, obj, name, value)
     
     type = type_info[1]
     mode = type_info[2]
@@ -1691,7 +1707,7 @@ def validate_trait_adapt(trait, obj, name, value):
     if result:
         return value
     
-    raise # trait error
+    raise_trait_error(trait, obj, name, value)
             
     
 
@@ -1770,4 +1786,143 @@ delegate_attr_name_handlers = [delegate_attr_name_name,
                                delegate_attr_name_prefix_name,
                                delegate_attr_name_class_name,
                                None]
+
+
+#------------------------------------------------------------------------------
+# Trait exceptions and error functions
+#------------------------------------------------------------------------------
+
+class TraitError(Exception):
+    pass
+
+
+class DelegationError(Exception):
+    pass
+
+
+def raise_trait_error(trait, obj, name, value):
+    trait.handler.error(obj, nam, value)
+
+
+def fatal_trait_error():
+    raise TraitError('Non-trait found in trait dictionary')
+
+
+def invalid_attribute_error():
+    raise TypeError('Attribute name must be a string')
+
+
+def bad_trait_error():
+    raise TraitError('Invalid argument to a trait constructor')
+
+
+def cant_set_items_error():
+    raise TraitError("Can not set a collection's '_items' trait")
+
+
+def bad_trait_value_error():
+    raise TraitError("Result of 'as_ctrait' method was not a 'CTraits' "
+                     "instance.")
+
+
+def bad_delegate_error(obj, name):
+    if not isinstance(name, basestring):
+        invalid_attribute_error()
+    raise DelegationError("The '%.s' attribute of a '%s' object delegates to "
+                          "and attribute which is not a defined trait." 
+                          % (name, obj.__class__.__name__))
+
+
+def bad_delegate_error2(obj, name):
+    if not isinstance(name, basestring):
+        invalid_attribute_error()
+    raise DelegationError("The '%.s' attribute of a '%s' object delegates to "
+                          "and attribute which does not have traits." 
+                          % (name, obj.__class__.__name__))
+
+
+def delegation_recursion_error(obj, name):
+    if not isinstance(name, basestring):
+        invalid_attribute_error()
+    raise DelegationError("Delegation recursion limit exceeded while setting "
+                          "the '%s' attribute of a '%s' object". 
+                          % (name, obj.__class__.__name__))
+
+
+def delegation_recursion_error2(obj, name):
+    if not isinstance(name, basestring):
+        invalid_attribute_error()
+    raise DelegationError("Delegation recursion limit exceeded while getting "
+                          "the defintion of the '%s' trait of a '%s' object."
+                          % (name, obj.__class__.__name__))
+
+
+def delete_readonly_error(obj, name):
+    if not isinstance(name, basestring):
+        invalid_attribute_error()
+    raise TraitError("Cannot delete the read only '%s' attribute of a '%s' "
+                     "object." % (name, obj.__class__.__name__))
+
+
+def set_readonly_error(obj, name):
+    if not isinstance(name, basestring):
+        invalid_attribute_error()
+    raise TraitError("Cannot modify the read only '%s' attribute of a '%s' "
+                     "object." % (name, obj.__class__.__name__))
+
+
+def set_disallow_error(obj, name):
+    if not isinstance(name, basestring):
+        invalid_attribute_error()
+    raise TraitError("Cannot set the undefined '%s' attribute of a '%s' "
+                     "object." % (name, obj.__class__.__name__))
+
+
+def set_delete_property_error(obj, name):
+    if not isinstance(name, basestring):
+        invalid_attribute_error()
+    raise TraitError("Cannot delete the '%s' property of a '%s' object."
+                     % (name, obj.__class__.__name__))
+
+
+def unknown_attribute_error(obj, name):
+    raise AttributeError("'%s' object has no attribute '%s'."
+                         % (obj.__class__.__name__, name))
+
+
+def dictionary_error():
+    raise TypeError("__dict__ must be set to a dictionary.")
+
+
+def argument_error(trait, meth, arg, obj, name, value):
+    trait.handler.arg_error(meth, int(arg), obj, name, value)
+
+
+def keyword_argument_error(trait, meth, obj, name, value):
+    trait.handler.keyword_error(meth, obj, name, value)
+
+
+def dup_argument_error(trait, meth, arg, obj, name):
+    trait.handler.dup_arg_error(meth, int(arg), obj, name)
+
+
+def missing_argument_error(trait, meth, arg, obj, name):
+    trait.handler.missing_arg_error(meth, int(arg), obj, name)
+                            
+
+def too_many_args_error(name, wanted, received):
+    if wanted == 0:
+        raise TypeError("%s() takes no arguments (%s given)" 
+                        % (name, received))
+    elif wanted == 1:
+        raise TypeError("%s() takes exactly 1 argument (%s given)"
+                        % (name, received))
+    else:
+        raise TypeError("%s() takes exactly %s arguments (%s given)"
+                        % (name, wanted, received))
+
+
+def invalid_result_error(trait, meth, obj, value):
+    trait.handler.return_error(meth, obj, value)
+
 
