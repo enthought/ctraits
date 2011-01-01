@@ -1,4 +1,4 @@
-#from ctraits_module import _Has_Traits_monitors
+#from ctraits_module import _HasTraits_monitors
 
 
 #------------------------------------------------------------------------------
@@ -23,7 +23,7 @@ TRAIT_POST_SETATTR_ORIGINAL_VALUE = 0x00000010
 TRAIT_VALUE_ALLOWED = 0x00000020
 TRAIT_VALUE_PROPERTY = 0x00000040
 TRAIT_IS_MAPPED = 0x00000080
-TRAIT_NO_VALUE_SET = 0x00000100
+TRAIT_NO_VALUE_TEST = 0x00000100
 
 
 #------------------------------------------------------------------------------
@@ -59,8 +59,8 @@ class CHasTraits(object):
         super(CHasTraits, has_traits_obj).__setattr__('_obj_dict', {})      # this can probaly be trashed along with the __dict__ property
         super(CHasTraits, has_traits_obj).__setattr__('_itrait_dict', {})
         super(CHasTraits, has_traits_obj).__setattr__('_ctrait_dict', cls.__dict__[class_traits])
-        has_traits_obj._notifiers_ = []
-        has_traits_obj._flags = 0x00000000
+        super(CHasTraits, has_traits_obj).__setattr__('_notifiers_', [])
+        super(CHasTraits, has_traits_obj).__setattr__('_flags', 0x00000000)
         return has_traits_obj
 
     def __init__(self, *args, **kwargs):
@@ -79,7 +79,7 @@ class CHasTraits(object):
             self._post_init_trait_listeners()
 
         # notify any monitors that a new object has been created
-        for cls, handler in _Has_Traits_monitors:
+        for cls, handler in _HasTraits_monitors:
             if isinstance(self, cls):
                 handler(self)
         
@@ -88,7 +88,7 @@ class CHasTraits(object):
         
         # set the flag to indicate that this trait object has been
         # initialized
-        self._flags |= HASTRAITS_INITED
+        super(CHasTraits, self).__setattr__('_flags', HASTRAITS_INITED)
 
     def __setattr__(self, name, value):
         # need to change these to 'in' checks similar to __getattribute__
@@ -447,6 +447,9 @@ class cTrait(object):
         self._delegate_prefix = None
         self._handler = None
         self._obj_dict = {}
+        
+        # create an empty list of notifiers
+        self._notifiers_ = []
     
 
     def __getattribute__(self, name):
@@ -1003,6 +1006,9 @@ def get_prefix_trait (obj, name, is_set):
     return trait
 
 
+def has_notifiers(tnotifiers, onotifiers):
+    return tnotifiers and onotifiers
+
 #-----------------
 # getattr handlers
 #-----------------
@@ -1077,7 +1083,7 @@ def getattr_property3(trait, obj, name):
 def setattr_trait(traito, traitd, obj, name, value):
     dct = obj._obj_dict
 
-    changed = traitd._flags & TRAIT_NO_VAlUE_TEST
+    changed = traitd._flags & TRAIT_NO_VALUE_TEST
     
     # XXX - get rid of this closure which replaces a goto
     def notify():
@@ -1331,7 +1337,7 @@ def validate_trait_int(trait, obj, name, value):
                 if int_value <= low:
                     raise
             else:
-                if int_val < low:
+                if int_value < low:
                     raise
         
         if high is not None:
@@ -1609,10 +1615,44 @@ def validate_trait_python(trait, obj, name, value):
     """Calls a Python-based trait validator"""
     return trait._py_validate(obj, name, value)
     
-    
+
 def validate_trait_adapt(trait, obj, name, value):
-    # XXX not implimented
-    raise
+    """Attempts to 'adapt' an object to a specified interface"""
+    
+    type_info = trait._py_validate
+    if value is None:
+        if type_info[3]:
+            return value
+        raise # raise_trait_error
+    
+    type = type_info[1]
+    mode = type_info[2]
+    
+    if mode == 2:
+        args = (value, type, None)
+    else:
+        args = (value, type)
+    result = adapt(*args)
+    
+    # the C code here is really convoluted... and I think it swallows
+    # errors in the adapt function...
+    if result is not None:
+        if mode > 0 or result is value:
+            return result
+    else:
+        result = validate_implements(*args)
+        if result:
+            return value
+        else:
+            return default_value_for(trait, obj, name)
+        
+    result = validate_implements(*args)
+    if result:
+        return value
+    
+    raise # trait error
+            
+    
 
 validate_handlers = [validate_trait_type, validate_trait_instance,
                      validate_trait_self_type, validate_trait_int,
