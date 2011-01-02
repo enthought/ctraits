@@ -1845,7 +1845,7 @@ def delegation_recursion_error(obj, name):
     if not isinstance(name, basestring):
         invalid_attribute_error()
     raise DelegationError("Delegation recursion limit exceeded while setting "
-                          "the '%s' attribute of a '%s' object". 
+                          "the '%s' attribute of a '%s' object." 
                           % (name, obj.__class__.__name__))
 
 
