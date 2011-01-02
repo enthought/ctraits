@@ -1801,7 +1801,7 @@ class DelegationError(Exception):
 
 
 def raise_trait_error(trait, obj, name, value):
-    trait.handler.error(obj, nam, value)
+    trait.handler.error(obj, name, value)
 
 
 def fatal_trait_error():
