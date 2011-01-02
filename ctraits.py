@@ -657,7 +657,7 @@ class cTrait(object):
         
     def rich_comparison(self, rich_comparison_boolean):
         """ _trait_rich_comparison """
-        self._flags &= (~(TRAIT_NOT_VALUE_TEST | TRAIT_OBJECT_IDENTITY))
+        self._flags &= (~(TRAIT_NO_VALUE_TEST | TRAIT_OBJECT_IDENTITY))
         if not rich_comparison_boolean:
             self._flags |= TRAIT_OBJECT_IDENTITY
 
@@ -668,9 +668,9 @@ class cTrait(object):
 
         self._flags &= (~(TRAIT_NO_VALUE_TEST | TRAIT_OBJECT_IDENTITY)) 
         
-        if comparison_enum_mode == 0:
+        if comparison_mode_enum == 0:
             self._flags |= TRAIT_NO_VALUE_TEST
-        elif comparison_enum_mode == 1:
+        elif comparison_mode_enum == 1:
             self._flags |= TRAIT_OBJECT_IDENTITY
             
     def value_allowed(self, value_allowed_boolean):
@@ -1073,7 +1073,22 @@ def call_notifiers(tnotifiers, onotifiers, obj, name, old_value, new_value):
             result = notifier(*args)
 
 def trait_property_changed(obj, name, old_value, new_value=None):
-    pass
+    trait = get_trait(obj, name, -1)
+
+    tnotifiers = trait._notifiers_
+    onotifiers = trait._notifiers_
+    rc = 0 # XXX - do we really need this return code, i think it just handles C-errors - SCC
+
+    if has_notifiers(tnotifiers, onotifiers):
+        null_new_value = new_value == None
+        if null_new_value:
+            new_value = getattr(obj, name)
+
+        rc = call_notifiers(tnotifiers, onotifiers, obj, name, old_value, 
+                            new_value)
+
+    return rc
+
 
 #-----------------
 # getattr handlers
@@ -1189,7 +1204,7 @@ def setattr_trait(traito, traitd, obj, name, value):
 
     # If the object's value is Undefined, then do not call the validate
     # method (as the object's value has not yet been set).
-    if (traitd._validate is not None) and (value != Undefined):
+    if (traitd._validate is not None) and (value is not Undefined):
         value = traitd._validate(traitd, obj, name, value)
 
     if (traitd._flags & TRAIT_SETATTR_ORIGINAL_VALUE):
@@ -1464,10 +1479,10 @@ def validate_trait_float(trait, obj, name, value):
 
     if high is not None:
         if exclude_mask & 2:
-            if float_value >= high:
+            if value >= high:
                 raise_trait_error(trait, obj, name, value)
         else:
-            if float_value > high:
+            if value > high:
                 raise_trait_error(trait, obj, name, value)
 
     return value
@@ -1666,7 +1681,8 @@ def validate_trait_coerce_type(trait, obj, name, value):
     coerce = False
     
     while idx < len(type_info):
-        type2 = type_info[i]
+        type2 = type_info[idx]
+        idx += 1
         if coerce:
             if isinstance(value, type2):
                 return type(value)
