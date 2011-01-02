@@ -1009,6 +1009,37 @@ def get_prefix_trait (obj, name, is_set):
     return trait
 
 
+def setattr_value(trait, obj, name, value):
+    """Assigns a special TraitValue to a specified trait attribute"""
+    trait_new = value.as_ctrait(trait)
+    
+    if trait_new is not None and type(trait_new) != cTrait:
+        raise #bad_trait_value_error
+    
+    dct = obj._itrait_dict
+    if name in dct:
+        trait_old = dct[name]
+        if trait_old._flags & TRAIT_VALUE_PROPERTY:
+            trait_old._unregister(obj, name)
+    
+    if trait_new is None:
+        del dct[name]
+        return
+    
+    if trait_new._flags & TRAIT_VALUE_PROPERTY:
+        value_old = obj.__getattribute__(name)
+        
+        obj_dict = obj._obj_dict
+        del obj_dict[name]
+    
+    dct[name] = trait_new
+    
+    if trait_new._flags & TRAIT_VALUE_PROPERTY:
+        trait_new._register(obj, name)
+        if trait_property_changed(obj, name, value_old):
+            raise # what sort of error
+    
+
 def has_notifiers(tnotifiers, onotifiers):
     return tnotifiers and onotifiers
 
@@ -1040,7 +1071,9 @@ def call_notifiers(tnotifiers, onotifiers, obj, name, old_value, new_value):
             result = trait_notification_handler(notifier, args)
         else:
             result = notifier(*args)
-    
+
+def trait_property_changed(obj, name, old_value, new_value=None):
+    pass
 
 #-----------------
 # getattr handlers
@@ -1120,11 +1153,12 @@ def setattr_trait(traito, traitd, obj, name, value):
 
     changed = traitd._flags & TRAIT_NO_VALUE_TEST
     
+    """
     # XXX - get rid of this closure which replaces a goto
     def notify():
         return
 
-    if value is None:
+    if value is None:  # XXX undefined?
         if name not in dct:
             return
         
@@ -1149,9 +1183,12 @@ def setattr_trait(traito, traitd, obj, name, value):
                                        old_value, value)
 
         return
+    """
 
     original_value = value
 
+    # If the object's value is Undefined, then do not call the validate
+    # method (as the object's value has not yet been set).
     if (traitd._validate is not None) and (value != Undefined):
         value = traitd._validate(traitd, obj, name, value)
 
@@ -1178,9 +1215,9 @@ def setattr_trait(traito, traitd, obj, name, value):
                 old_value = default_value_for(traitd, obj, name)
 
         if not changed:
-            changed = (old_value != value)
+            changed = (old_value is not value)
             if changed and ((traitd._flags & TRAIT_OBJECT_IDENTITY) == 0):
-                changed = cmp(old_value, value)
+                changed = (old_value != value)
 
     dct[name] = new_value
 
