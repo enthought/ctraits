@@ -168,7 +168,7 @@ class CHasTraits(object):
                      get_prefix_trait(delegate, daname2, 0) or
                      bad_delegate_error(self, name)) # XXX - should change this to 'in' checks
 
-            if not isinstance(trait, ctrait_type):
+            if type(trait) is not ctrait_type:
                 fatal_trait_error()
 
             i += 1
@@ -979,7 +979,7 @@ def get_trait(obj, name, instance):
     # XXX I think we are guaranteed instance dict
     
     # Create a new instance trait and clone the class trait into it
-    itrait = cTrait(0)
+    itrait = ctrait_type(0)
     trait_clone(itrait, trait)
     itrait._obj_dict = trait._obj_dict
     
@@ -1106,7 +1106,7 @@ def getattr_trait(trait, obj, name):
     tnotifiers = trait._notifiers_
     onotifiers = obj._notifiers_
     if has_notifiers(tnotifiers, onotifiers):
-        call_notifiers(tnotifiers, onotifiers, obj, name, Unitialized, res)
+        call_notifiers(tnotifiers, onotifiers, obj, name, Uninitialized, res)
 
     return res
 
@@ -1232,7 +1232,10 @@ def setattr_trait(traito, traitd, obj, name, value):
         if not changed:
             changed = (old_value is not value)
             if changed and ((traitd._flags & TRAIT_OBJECT_IDENTITY) == 0):
-                changed = (old_value != value)
+                try:
+                    changed = (old_value != value)
+                except Exception: # ctraits.c really does this on line 2588
+                    pass
 
     dct[name] = new_value
 
