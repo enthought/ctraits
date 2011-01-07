@@ -1041,7 +1041,7 @@ def setattr_value(trait, obj, name, value):
     
 
 def has_notifiers(tnotifiers, onotifiers):
-    return tnotifiers and onotifiers
+    return tnotifiers or onotifiers
 
 
 def call_notifiers(tnotifiers, onotifiers, obj, name, old_value, new_value):
