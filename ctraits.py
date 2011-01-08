@@ -153,7 +153,7 @@ class CHasTraits(object):
 
             dct = delegate._obj_dict
             temp_delegate = (dct.get(trait._delegate_name) or 
-                             has_traits_getattro(delegate, trait._delegate_name))
+                             getattr(delegate, trait._delegate_name))
             
             delegate = temp_delegate
 
@@ -453,7 +453,6 @@ class cTrait(object):
         
         # create an empty list of notifiers
         self._notifiers_ = []
-    
 
     def __getattribute__(self, name):
         _obj_dict = object.__getattribute__(self, '_obj_dict')
