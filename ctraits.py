@@ -25,6 +25,9 @@ TRAIT_VALUE_PROPERTY = 0x00000040
 TRAIT_IS_MAPPED = 0x00000080
 TRAIT_NO_VALUE_TEST = 0x00000100
 
+# A NULL sentinal that serves the same function as C NULL, since None
+# won't suffice for all cases
+NULL = object()
 
 #------------------------------------------------------------------------------
 # Constants which are set/initialized by the 'private' module level 
@@ -193,7 +196,7 @@ class CHasTraits(object):
         else:
             self._flags &= (~HASTRAITS_VETO_NOTIFY)
 
-    def trait_property_changed(self, name, old_value, new_value=None):
+    def trait_property_changed(self, name, old_value, new_value=NULL):
         trait_property_changed(self, name, old_value, new_value)
 
     def trait_items_event(self, name, event_obj, event_trait):
@@ -854,10 +857,11 @@ def _list_classes(list_obj, set_obj, dict_obj):
     TraitDictObject = dict_obj
 
 
-def _trait_notification_handler():
+def _trait_notification_handler(handler):
     global trait_notification_handler
-    trait_notification_handler
-
+    res = trait_notification_handler
+    trait_notification_handler = handler
+    return res
 
 def _undefined(undefined, uninitialized):
     global Undefined, Uninitialized
@@ -1012,8 +1016,8 @@ def setattr_value(trait, obj, name, value):
     """Assigns a special TraitValue to a specified trait attribute"""
     trait_new = value.as_ctrait(trait)
     
-    if trait_new is not None and type(trait_new) != cTrait:
-        raise #bad_trait_value_error
+    if (trait_new is not None) and (type(trait_new) is not ctrait_type):
+        bad_trait_value_error()
     
     dct = obj._itrait_dict
     if name in dct:
@@ -1026,7 +1030,7 @@ def setattr_value(trait, obj, name, value):
         return
     
     if trait_new._flags & TRAIT_VALUE_PROPERTY:
-        value_old = obj.__getattribute__(name)
+        value_old = getattr(obj, name)
         
         obj_dict = obj._obj_dict
         del obj_dict[name]
@@ -1035,8 +1039,7 @@ def setattr_value(trait, obj, name, value):
     
     if trait_new._flags & TRAIT_VALUE_PROPERTY:
         trait_new._register(obj, name)
-        if trait_property_changed(obj, name, value_old):
-            raise # what sort of error
+        trait_property_changed(obj, name, value_old, NULL)
     
 
 def has_notifiers(tnotifiers, onotifiers):
@@ -1052,13 +1055,13 @@ def call_notifiers(tnotifiers, onotifiers, obj, name, old_value, new_value):
     # to be sent
     if obj._flags & HASTRAITS_NO_NOTIFY:
         return
-    
+   
     tnotifiers = tnotifiers[:] # XXX why copy?
     for notifier in tnotifiers:
         if new_value_has_traits and new_value._flags & HASTRAITS_VETO_NOTIFY:
             return
         if trait_notification_handler is not None:
-            result = trait_notification_handler(notifier, args)
+            result = trait_notification_handler(notifier, *args)
         else:
             result = notifier(*args)
     
@@ -1067,11 +1070,11 @@ def call_notifiers(tnotifiers, onotifiers, obj, name, old_value, new_value):
         if new_value_has_traits and new_value._flags & HASTRAITS_VETO_NOTIFY:
             return
         if trait_notification_handler is not None:
-            result = trait_notification_handler(notifier, args)
+            result = trait_notification_handler(notifier, *args)
         else:
             result = notifier(*args)
 
-def trait_property_changed(obj, name, old_value, new_value=None):
+def trait_property_changed(obj, name, old_value, new_value):
     trait = get_trait(obj, name, -1)
 
     tnotifiers = trait._notifiers_
@@ -1079,8 +1082,7 @@ def trait_property_changed(obj, name, old_value, new_value=None):
     rc = 0 # XXX - do we really need this return code, i think it just handles C-errors - SCC
 
     if has_notifiers(tnotifiers, onotifiers):
-        null_new_value = new_value == None
-        if null_new_value:
+        if new_value is NULL:
             new_value = getattr(obj, name)
 
         rc = call_notifiers(tnotifiers, onotifiers, obj, name, old_value, 
@@ -1240,7 +1242,7 @@ def setattr_trait(traito, traitd, obj, name, value):
 
     if changed:
         if post_setattr is not None:
-            if traitd_flags & TRAIT_POST_SETATTR_ORIGINAL_VALUE:
+            if traitd._flags & TRAIT_POST_SETATTR_ORIGINAL_VALUE:
                 sval = original_value
             else:
                 sval = new_value
@@ -1257,7 +1259,10 @@ def setattr_python(traito, traitd, obj, name, value):
     # to indicate that the attribute should be deleted from the dict.
     # What should we do here?
     dct = obj._obj_dict
-    dct[name] = value
+    if value is NULL:
+        del dct[name]
+    else:
+        dct[name] = value
 
 
 def setattr_event(traito, traitd, obj, name, value):
@@ -1443,18 +1448,18 @@ def validate_trait_int(trait, obj, name, value):
         if low is not None:
             if exclude_mask & 1:
                 if int_value <= low:
-                    raise
+                    raise_trait_error(trait, obj, name, value)
             else:
                 if int_value < low:
-                    raise
+                    raise_trait_error(trait, obj, name, value)
         
         if high is not None:
             if exclude_mask & 2:
                 if int_value >= high:
-                    raise
+                    raise_trait_error(trait, obj, name, value)
             else:
                 if int_value > high:
-                    raise
+                    raise_trait_error(trait, obj, name, value)
 
         return value
 
@@ -1499,9 +1504,13 @@ def validate_trait_enum(trait, obj, name, value):
 
 def validate_trait_map(trait, obj, name, value):
     type_info = trait._py_validate
-    if value in type_info[1]:
-        return value
-    raise_trait_error(trait, obj, name, value)
+    # The C-code for this uses PyDict_GetItem and then catches 
+    # all exceptions. One of the tests passes a list for `value`
+    # hence the need to catch TypeError as well as KeyError.
+    try:
+        type_info[1][value]
+    except (KeyError, TypeError):
+        raise_trait_error(trait, obj, name, value)
 
 
 def validate_trait_prefix_map(trait, obj, name, value):
