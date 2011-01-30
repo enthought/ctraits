@@ -1399,7 +1399,7 @@ def setattr_delegate(traito, traitd, obj, name, value):
         if type(traitd) is not ctrait_type:
             fatal_trait_error()
 
-        if traitd.c_attrs.delegate_attr_name is not None:
+        if traitd.c_attrs.delegate_attr_name is None:
             if traito.c_attrs.flags & TRAIT_MODIFY_DELEGATE:
                 result = traitd.c_attrs.setattr(traitd, traitd, delegate, daname,
                                                 value)
