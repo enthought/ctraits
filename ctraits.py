@@ -29,6 +29,7 @@ TRAIT_NO_VALUE_TEST = 0x00000100
 # won't suffice for all cases
 NULL = object()
 
+
 #------------------------------------------------------------------------------
 # Constants which are set/initialized by the 'private' module level 
 # functions (compat with the ctraits.c api)
@@ -51,6 +52,7 @@ TraitDictObject = None
 
 _HasTraits_monitors = []
 
+
 #------------------------------------------------------------------------------
 # CHasTraits type
 #------------------------------------------------------------------------------
@@ -58,6 +60,12 @@ _HasTraits_monitors = []
 class CHasTraitsAttrs(object):
 
     __slots__ = ('ctrait_dict', 'itrait_dict', 'notifiers', 'flags')
+
+    def __init__(self):
+        self.ctrait_dict = NULL
+        self.itrait_dict = NULL
+        self.notifiers = NULL
+        self.flags = 0x0
 
 
 class CHasTraits(object):
@@ -67,10 +75,7 @@ class CHasTraits(object):
     def __new__(cls, *args, **kwargs):
         has_traits_obj = super(CHasTraits, cls).__new__(cls)
         c_attrs = CHasTraitsAttrs()
-        c_attrs.itrait_dict = {}
         c_attrs.ctrait_dict = cls.__dict__[class_traits]
-        c_attrs.notifiers = []
-        c_attrs.flags = 0x0
         object.__setattr__(has_traits_obj, 'c_attrs', c_attrs)
         return has_traits_obj
 
@@ -104,33 +109,39 @@ class CHasTraits(object):
     def __setattr__(self, name, value):
         itrait_dict = self.c_attrs.itrait_dict
         ctrait_dict = self.c_attrs.ctrait_dict
-        
-        if name in itrait_dict:
+       
+        if (itrait_dict is not NULL) and (name in itrait_dict):
             trait = itrait_dict[name]
         elif name in ctrait_dict:
             trait = ctrait_dict[name]
         else:
             trait = get_prefix_trait(self, name, 1)
 
-        flags = trait.c_attrs.flags
-        if ((flags & TRAIT_VALUE_ALLOWED) and
+        c_attrs = trait.c_attrs
+        if ((c_attrs.flags & TRAIT_VALUE_ALLOWED) and
             isinstance(trait, TraitValue)):
             setattr_value(trait, self, name, value)
         else:
-            trait.c_attrs.setattr(trait, trait, self, name, value)
+            c_attrs.setattr(trait, trait, self, name, value)
 
     def __getattribute__(self, name):
         __dict__ = object.__getattribute__(self, '__dict__')
         if name in __dict__:
             return __dict__[name]
 
+        # if asking for __dict__ go ahead and return 
+        # it now instead of computing the rest 
+        # of this function and eventually falling
+        # through to object.__getattribute__ anyway
         if name == '__dict__':
             return __dict__
 
         c_attrs = object.__getattribute__(self, 'c_attrs')
-        
+        if name == 'c_attrs':
+            return c_attrs
+
         itrait_dict = c_attrs.itrait_dict
-        if name in itrait_dict:
+        if (itrait_dict is not NULL) and (name in itrait_dict):
             trait = itrait_dict[name]
             return trait.c_attrs.getattr(trait, self, name)
 
@@ -170,7 +181,7 @@ class CHasTraits(object):
         daname = name
         i = 0
         while True:
-            if trait.c_attrs.delegate_attr_name is None:
+            if trait.c_attrs.delegate_attr_name is NULL:
                 return trait
 
             dct = delegate.__dict__
@@ -186,12 +197,12 @@ class CHasTraits(object):
 
             itrait_dict = delegate.c_attrs.itrait_dict
             ctrait_dict = delegate.c_attrs.ctrait_dict 
-            if daname in itrait_dict:
+            if (itrait_dict is not NULL) and (daname in itrait_dict):
                 trait = itrait_dict[daname]
             elif daname in ctrait_dict:
                 trait = ctrait_dict[daname]
             else:
-                trait = get_prefix_trait(delegate, daname2, 0)
+                trait = get_prefix_trait(delegate, daname, 0)
 
             if not trait:
                 bad_delegate_error(self, name)
@@ -204,10 +215,20 @@ class CHasTraits(object):
                 delegation_recursion_error2(self, name)
 
     def _instance_traits(self):
-        return self.c_attrs.itrait_dict
+        c_attrs = self.c_attrs
+        if c_attrs.itrait_dict is NULL:
+            c_attrs.itrait_dict = {}
+        return c_attrs.itrait_dict
 
-    def _notifiers(self, force_create=None):
-        return self.c_attrs.notifiers
+    def _notifiers(self, force_create=False):
+        c_attrs = self.c_attrs
+        res = c_attrs.notifiers
+        if res is NULL:
+            res = None
+            if force_create:
+                res = []
+                c_attrs.notifiers = res
+        return res
 
     def _trait_change_notify(self, enabled=False):
         if enabled:
@@ -233,37 +254,37 @@ class CHasTraits(object):
 
         itrait_dict = self.c_attrs.itrait_dict 
         ctrait_dict = self.c_attrs.ctrait_dict
-        if name in itrait_dict:
+        if (itrait_dict is not NULL) and (name in itrait_dict):
             trait = itrait_dict[name]
         elif name in ctrait_dict:
             trait = ctrait_dict[name]
         else:
-            trait = None
+            trait = NULL
 
-        if trait is None:
+        if trait is NULL:
             self.add_trait(name, event_trait)
             itrait_dict = self.c_attrs.itrait_dict
             ctrait_dict = self.c_attrs.ctrait_dict
-            if name in itrait_dict:
+            if (itrait_dict is not NULL) and (name in itrait_dict):
                 trait = itrait_dict[name]
             elif name in ctrait_dict:
                 trait = ctrait_dict[name]
             else:
-                trait = None
-            if trait is None:
+                trait = NULL
+            if trait is NULL:
                 cant_set_items_error()
 
         if trait.c_attrs.setattr is setattr_disallow:
             self.add_trait(name, event_trait)
             itrait_dict = self.c_attrs.itrait_dict
             ctrait_dict = self.c_attrs.ctrait_dict
-            if name in itrait_dict:
+            if (itrait_dict is not NULL) and (name in itrait_dict):
                 trait = itrait_dict[name]
             elif name in ctrait_dict:
                 trait = ctrait_dict[name]
             else:
-                trait = None
-            if trait is None:
+                trait = NULL
+            if trait is NULL:
                 cant_set_items_error()
 
         trait.c_attrs.setattr(trait, trait, self, name, event_obj)
@@ -478,6 +499,22 @@ class CTraitAttrs(object):
                  'delegate_attr_name', 'notifiers', 
                  'handler')
 
+    def __init__(self):
+        self.flags = 0x0
+        self.getattr = NULL
+        self.setattr = NULL
+        self.post_setattr = NULL
+        self.py_post_setattr = NULL
+        self.validate = NULL
+        self.py_validate = NULL
+        self.default_value_type = 0
+        self.default_value = NULL
+        self.delegate_name = NULL
+        self.delegate_prefix = NULL
+        self.delegate_attr_name = NULL
+        self.notifiers = NULL
+        self.handler = NULL
+
 
 class cTrait(object):
     
@@ -494,24 +531,9 @@ class cTrait(object):
             bad_trait_error()
 
         self.c_attrs = c_attrs = CTraitAttrs()
-
         c_attrs.getattr = getattr_handlers[kind]
         c_attrs.setattr = setattr_handlers[kind]
-        
-        c_attrs.post_setattr = None
-        c_attrs.validate = None
-        c_attrs.delegate_attr_name = None
-        
-        c_attrs.py_post_setattr = None
-        c_attrs.py_validate = None
-        c_attrs.default_value_type = None
-        c_attrs.default_value = None
-        c_attrs.flags = 0x00000000
-        c_attrs.delegate_name = None
-        c_attrs.delegate_prefix = None
-        c_attrs.handler = None
-        c_attrs.notifiers = []
-        
+                
     def __getattribute__(self, name):
         # XXX - why does ctraits.c do this?
         try:
@@ -581,7 +603,7 @@ class cTrait(object):
         """ _trait_default_value """
         c_attrs = self.c_attrs
         if not args:
-            if c_attrs.default_value is None:
+            if c_attrs.default_value is NULL:
                 return (0, None)
             else:
                 return (c_attrs.default_value_type, c_attrs.default_value)
@@ -692,14 +714,14 @@ class cTrait(object):
     def get_validate(self):
         """ _trait_get_validate """
         c_attrs = self.c_attrs
-        if c_attrs.validate is not None:
+        if c_attrs.validate is not NULL:
             return c_attrs.py_validate
         return None
 
     def validate(self, obj, name, value):
         """ _trait_validate """
         c_attrs = self.c_attrs
-        if c_attrs.validate is None:
+        if c_attrs.validate is NULL:
             return value
         return c_attrs.validate(self, obj, name, value)
 
@@ -720,65 +742,65 @@ class cTrait(object):
         c_attrs.delegate_attr_name = delegate_attr_name_handlers[prefix_type]
 
         
-    def rich_comparison(self, rich_comparison_boolean):
+    def rich_comparison(self, compare_type):
         """ _trait_rich_comparison """
         c_attrs = self.c_attrs
         c_attrs.flags &= (~(TRAIT_NO_VALUE_TEST | TRAIT_OBJECT_IDENTITY))
-        if not rich_comparison_boolean:
+        if not compare_type:
             c_attrs.flags |= TRAIT_OBJECT_IDENTITY
 
-    def comparison_mode(self, comparison_mode_enum):
+    def comparison_mode(self, comparison_mode):
         """ _trait_comparison_mode """
-        if not isinstance(comparison_mode_enum, int):
-            raise TypeError("Comparison mode must be an integer")
-
         c_attrs = self.c_attrs
         c_attrs.flags &= (~(TRAIT_NO_VALUE_TEST | TRAIT_OBJECT_IDENTITY)) 
         
-        if comparison_mode_enum == 0:
+        if comparison_mode == 0:
             c_attrs.flags |= TRAIT_NO_VALUE_TEST
-        elif comparison_mode_enum == 1:
+        elif comparison_mode == 1:
             c_attrs.flags |= TRAIT_OBJECT_IDENTITY
             
-    def value_allowed(self, value_allowed_boolean):
+    def value_allowed(self, value_allowed):
         """ _trait_value_allowed """
         c_attrs = self.c_attrs
-        if value_allowed_boolean:
+        if value_allowed:
             c_attrs.flags |= TRAIT_VALUE_ALLOWED
         else:
             c_attrs.flags &= (~TRAIT_VALUE_ALLOWED)
 
-    def value_property(self, value_trait_boolean):
+    def value_property(self, value_trait):
         """ _trait_value_property """
         c_attrs = self.c_attrs
-        if value_trait_boolean:
+        if value_trait:
             c_attrs.flags |= TRAIT_VALUE_PROPERTY
         else:
             c_attrs.flags &= (~TRAIT_VALUE_PROPERTY)
 
-    def setattr_original_value(self, original_value_boolean):
+    def setattr_original_value(self, original_value):
         """ _trait_setattr_original_value """
         c_attrs = self.c_attrs
-        if original_value_boolean:
+        if not original_value:
             c_attrs.flags |= TRAIT_SETATTR_ORIGINAL_VALUE
         else:
             c_attrs.flags &= (~TRAIT_SETATTR_ORIGINAL_VALUE)
+        return self
 
-    def post_setattr_original_value(self, original_value_boolean):
+    def post_setattr_original_value(self, original_value):
         """ _trait_post_setattr_original_value """
         c_attrs = self.c_attrs
-        if original_value_boolean:
+        if not original_value:
             c_attrs.flags |= TRAIT_POST_SETATTR_ORIGINAL_VALUE
         else:
             c_attrs.flags &= (~TRAIT_POST_SETATTR_ORIGINAL_VALUE)
+        return self
 
-    def is_mapped(self, is_mapped_boolean):
+    def is_mapped(self, is_mapped):
         """ _trait_is_mapped """
         c_attrs = self.c_attrs
-        if is_mapped_boolean:
+        if not is_mapped:
             c_attrs.flags |= TRAIT_IS_MAPPED
         else:
             c_attrs.flags &= (~TRAIT_IS_MAPPED)
+        return self
 
     def property(self, *args):
         """ _trait_property """
@@ -840,7 +862,7 @@ class cTrait(object):
             raise ValueError("cast takes 1, 2, or 3 arguments %s given." 
                              % n_args)
 
-        if c_attrs.validate is None:
+        if c_attrs.validate is NULL:
             return value
 
         try:
@@ -862,9 +884,11 @@ class cTrait(object):
 
         res = c_attrs.notifiers
 
-        if res is None and force_create:
-            res = []
-            c_attrs.notifiers = res
+        if res is NULL:
+            res = None
+            if force_create:
+                res = []
+                c_attrs.notifiers = res
 
         return res
 
@@ -882,7 +906,10 @@ class cTrait(object):
 
     def _get_trait_handler(self):
         """ get_trait_handler """
-        return self.c_attrs.handler
+        res = self.c_attrs.handler
+        if res is NULL:
+            res = None
+        return res
 
     def _set_trait_handler(self, value):
         """ set_trait_handler """
@@ -892,7 +919,10 @@ class cTrait(object):
 
     def _get_trait_post_setattr(self):
         """ get_trait_post_setattr """
-        return self.c_attrs.py_post_setattr
+        res = self.c_attrs.py_post_setattr
+        if res is NULL:
+            res = None
+        return res
 
     def _set_trait_post_setattr(self, value):
         """ set_trait_post_setattr """
@@ -962,18 +992,21 @@ def _value_class(trait_value):
 #------------------------------------------------------------------------------
 
 def get_callable_value(value):
-    # -1 is a sentinel value
-    if callable(value):
+    # -1 is a sentinel value for is_callable
+    if value is NULL:
+        value = None
+    elif callable(value):
         value = -1
     elif isinstance(value, tuple) and value and value[0] == 10:
-        temp = (value[0], value[1], -1)
-        value = temp
+        value = (value[0], value[1], -1)
     return value
 
 
 def get_value(value):
     # This function in C just checked for a null pointer
     # and returned None for that case.
+    if value is NULL:
+        value = None
     return value
 
 
@@ -1041,12 +1074,13 @@ def get_trait(obj, name, instance):
     # If there already is an instance specific version of the requested trait,
     # then return it.
     itrait_dict = obj.c_attrs.itrait_dict 
-    if name in itrait_dict:
+    if (itrait_dict is not NULL) and (name in itrait_dict):
         trait = itrait_dict[name]
-
+        return trait
+    
     # If only an instance trait can be returned (but not created), then 
     # return None
-    elif instance == 1:
+    if instance == 1:
         return None
     
     # Otherwise, get the class specific version of the trait (creating a
@@ -1054,17 +1088,19 @@ def get_trait(obj, name, instance):
     ctrait_dict = obj.c_attrs.ctrait_dict
     if name in ctrait_dict:
         trait = ctrait_dict[name]
-    elif instance == 0:
-        return None
     else:
-        trait = get_prefix_trait(obj, name, False)
+        if instance == 0:
+            return None
+        else:
+            trait = get_prefix_trait(obj, name, False)
     
     # If an instance specific trait is not needed, return the class trait
     if instance <= 0:
         return trait
     
     # Otherwise, create an instance trait dictionary if it does not exist
-    # XXX I think we are guaranteed instance dict
+    if itrait_dict is NULL:
+        obj.c_attrs.itrait_dict = itrait_dict = {}
     
     # Create a new instance trait and clone the class trait into it
     itrait = ctrait_type(0)
@@ -1072,7 +1108,8 @@ def get_trait(obj, name, instance):
     itrait.__dict__ = trait.__dict__
     
     # Copy the class trait's notifier list into the instance trait
-    itrait.c_attrs.notifiers = trait.c_attrs.notifiers[:] 
+    if trait.c_attrs.notifiers is not NULL:
+        itrait.c_attrs.notifiers = trait.c_attrs.notifiers[:] 
 
     # Add the instance trait to the instance's trait dictionary and return
     # the instance trait if successful
@@ -1090,31 +1127,35 @@ def get_prefix_trait(obj, name, is_set):
     """
     
     trait = obj.__prefix_trait__(name, is_set)
-    if trait is not None:
-        ctrait_dict = obj.c_attrs.ctrait_dict
-        ctrait_dict[name] = trait
-        setattr(obj, trait_added, name)
-        trait = get_trait(obj, name, False)
+    ctrait_dict = obj.c_attrs.ctrait_dict
+    ctrait_dict[name] = trait
+    setattr(obj, trait_added, name)
+    trait = get_trait(obj, name, 0)
     return trait
 
 
 def setattr_value(trait, obj, name, value):
     """Assigns a special TraitValue to a specified trait attribute"""
     trait_new = value.as_ctrait(trait)
-    
+    trait_old = NULL
+
     if (trait_new is not None) and (type(trait_new) is not ctrait_type):
         bad_trait_value_error()
     
     dct = obj.c_attrs.itrait_dict
-    if name in dct:
+    if (dct is not NULL) and (name in dct):
         trait_old = dct[name]
         if trait_old.c_attrs.flags & TRAIT_VALUE_PROPERTY:
             trait_old._unregister(obj, name)
     
     if trait_new is None:
-        del dct[name]
+        if trait_old is not NULL:
+            del dct[name]
         return
     
+    if dct is NULL:
+        obj.c_attrs.itrait_dict = dct = {}
+
     if trait_new.c_attrs.flags & TRAIT_VALUE_PROPERTY:
         value_old = getattr(obj, name)
         
@@ -1129,7 +1170,7 @@ def setattr_value(trait, obj, name, value):
     
 
 def has_notifiers(tnotifiers, onotifiers):
-    return tnotifiers or onotifiers
+    return (tnotifiers is not NULL) or (onotifiers is not NULL)
 
 
 def call_notifiers(tnotifiers, onotifiers, obj, name, old_value, new_value):
@@ -1144,24 +1185,26 @@ def call_notifiers(tnotifiers, onotifiers, obj, name, old_value, new_value):
    
     if new_value_has_traits:
         new_value_flags = new_value.c_attrs.flags
-
-    tnotifiers = tnotifiers[:] # XXX why copy?
-    for notifier in tnotifiers:
-        if new_value_has_traits and (new_value_flags & HASTRAITS_VETO_NOTIFY):
-            return
-        if trait_notification_handler is not None:
-            result = trait_notification_handler(notifier, *args)
-        else:
-            result = notifier(*args)
     
-    onotifiers = onotifiers[:]
-    for notifier in onotifiers:
-        if new_value_has_traits and (new_value_flags & HASTRAITS_VETO_NOTIFY):
-            return
-        if trait_notification_handler is not None:
-            result = trait_notification_handler(notifier, *args)
-        else:
-            result = notifier(*args)
+    if tnotifiers is not NULL:
+        tnotifiers = tnotifiers[:] # XXX why copy?
+        for notifier in tnotifiers:
+            if new_value_has_traits and (new_value_flags & HASTRAITS_VETO_NOTIFY):
+                return
+            if trait_notification_handler is not None:
+                result = trait_notification_handler(notifier, *args)
+            else:
+                result = notifier(*args)
+    
+    if onotifiers is not NULL:
+        onotifiers = onotifiers[:]
+        for notifier in onotifiers:
+            if new_value_has_traits and (new_value_flags & HASTRAITS_VETO_NOTIFY):
+                return
+            if trait_notification_handler is not None:
+                result = trait_notification_handler(notifier, *args)
+            else:
+                result = notifier(*args)
 
 def trait_property_changed(obj, name, old_value, new_value):
     trait = get_trait(obj, name, -1)
@@ -1191,8 +1234,8 @@ def getattr_trait(trait, obj, name):
     
     c_attrs = trait.c_attrs
 
-    if (c_attrs.post_setattr is not None) and \
-       ((c_attrs.flags & TRAIT_IS_MAPPED) == 0):
+    if ((c_attrs.post_setattr is not NULL) and not
+        (c_attrs.flags & TRAIT_IS_MAPPED)):
         c_attrs.post_setattr(trait, obj, name, res)
 
     tnotifiers = c_attrs.notifiers
@@ -1214,11 +1257,15 @@ def getattr_event(trait, obj, name):
 
 
 def getattr_delegate(trait, obj, name):
-    # XXX - why is dct not used?
+    # XXX - this may still be wrong
+    c_attrs = trait.c_attrs
     dct = obj.__dict__
-    delegate = getattr(obj, trait.c_attrs.delegate_name)
+    if c_attrs.delegate_name in dct:
+        delegate = dct[c_attrs.delegate_name]
+    else:
+        delegate = getattr(obj, trait.c_attrs.delegate_name)
 
-    delegate_attr_name = trait.c_attrs.delegate_attr_name(trait, obj, name)
+    delegate_attr_name = c_attrs.delegate_attr_name(trait, obj, name)
     return getattr(delegate, delegate_attr_name)
 
 
@@ -1252,52 +1299,82 @@ def getattr_property3(trait, obj, name):
 #-----------------
 # setattr handlers
 #-----------------
-def setattr_value(*args):
-    raise NotImplementedError("implement me!")
+def setattr_value(trait, obj, name, value):
+    trait_new = value.as_ctrait(trait)
+    trait_old = NULL
 
+    if (trait_new is not None) and not (type(trait_new) is ctrait_type):
+        bad_trait_value_error()
+
+    dct = obj.c_attrs.itrait_dict
+    if (dct is not NULL) and (name is dct):
+        trait_old = dct[name]
+        if (trait_old.c_attrs.flags & TRAIT_VALUE_PROPERTY):
+            res = traid_old._unregister(obj, name)
+
+    if trait_new is None:
+        if trait_old is not NULL:
+            del dct[name]
+            return
+
+    if dct is NULL:
+        obj.c_attrs.itrait_dict = dct = {}
+
+    if (trait_new.c_attrs.flags & TRAIT_VALUE_PROPERTY):
+        value_old = getattr(obj, name)
+        __dict__ = obj.__dict__
+        del __dict__[name]
+
+    dct[name] = trait_new
+
+    if trait_new.c_attrs.flags & TRAIT_VALUE_PROPERTY:
+        res = trait_new._register(obj, name)
+        trait_property_changed(obj, name, value_old, NULL)
+        
 
 def setattr_trait(traito, traitd, obj, name, value):
-    dct = obj.__dict__
-
-    changed = traitd.c_attrs.flags & TRAIT_NO_VALUE_TEST
-    
-    """
+    # XXX - this may be wrong
     # XXX - get rid of this closure which replaces a goto
     def notify():
         return
 
-    if value is None:  # XXX undefined?
+    dct = obj.__dict__
+    changed = traitd.c_attrs.flags & TRAIT_NO_VALUE_TEST
+    
+    if value is NULL:
         if name not in dct:
             return
         
         old_value = dct.pop(name)
 
-        if (obj._flags & HASTRAITS_NO_NOTIFY) == 0:
-            tnotifiers = traito._notifiers_
-            onotifiers = obj._notifiers_
-            if (tnotifiers is not None) or (onotifiers is not None):
-                value = traito._getattr(traito, obj, name)
+        if not (obj.c_attrs.flags & HASTRAITS_NO_NOTIFY):
+            tnotifiers = traito.c_attrs.notifiers
+            onotifiers = obj.c_attrs.notifiers
+            if (tnotifiers is not NULL) or (onotifiers is not NULL):
+                value = traito.c_attrs.getattr(traito, obj, name)
                 if not changed:
-                    changed = old_value != value
-                    if changed and ((traitd._flags & TRAIT_OBJECT_IDENTITY) == 0):
-                        changed = cmp(old_value, value)
+                    changed = (old_value != value)
+                    if changed and not (traitd.c_attrs.flags & TRAIT_OBJECT_IDENTITY):
+                        try:
+                            changed = cmp(old_value, value)
+                        except Exception:
+                            changed = -1
 
                 if changed:
-                    if traitd._post_setattr is not None:
-                        traitd._post_setattr(traitd, obj, name, value)
+                    if traitd.c_attrs.post_setattr is not NULL:
+                        traitd.c_attrs.post_setattr(traitd, obj, name, value)
 
                     if has_notifiers(tnotifiers, onotifiers):
                         call_notifiers(tnotifiers, onotifiers, obj, name, 
                                        old_value, value)
 
         return
-    """
 
     original_value = value
 
     # If the object's value is Undefined, then do not call the validate
     # method (as the object's value has not yet been set).
-    if (traitd.c_attrs.validate is not None) and (value is not Undefined):
+    if (traitd.c_attrs.validate is not NULL) and (value is not Undefined):
         value = traitd.c_attrs.validate(traitd, obj, name, value)
 
     if (traitd.c_attrs.flags & TRAIT_SETATTR_ORIGINAL_VALUE):
@@ -1305,7 +1382,7 @@ def setattr_trait(traito, traitd, obj, name, value):
     else:
         new_value = value
 
-    old_value = None
+    old_value = NULL
 
     tnotifiers = traito.c_attrs.notifiers
     onotifiers = obj.c_attrs.notifiers
@@ -1313,7 +1390,7 @@ def setattr_trait(traito, traitd, obj, name, value):
 
     post_setattr = traitd.c_attrs.post_setattr
     
-    if (post_setattr is not None) or do_notifiers:
+    if (post_setattr is not NULL) or do_notifiers:
         if name in dct:
             old_value = dct[name]
         else:
@@ -1324,20 +1401,20 @@ def setattr_trait(traito, traitd, obj, name, value):
 
         if not changed:
             changed = (old_value is not value)
-            if changed and ((traitd.c_attrs.flags & TRAIT_OBJECT_IDENTITY) == 0):
+            if changed and not (traitd.c_attrs.flags & TRAIT_OBJECT_IDENTITY):
                 try:
                     changed = (old_value != value)
                 except Exception: # ctraits.c really does this on line 2588
-                    pass
+                    change = -1
 
     dct[name] = new_value
 
     if changed:
-        if post_setattr is not None:
+        if post_setattr is not NULL:
             if traitd.c_attrs.flags & TRAIT_POST_SETATTR_ORIGINAL_VALUE:
                 sval = original_value
             else:
-                sval = new_value
+                sval = value
             post_setattr(traitd, obj, name, sval)
         if do_notifiers:
             call_notifiers(tnotifiers, onotifiers, obj, name, old_value,
@@ -1347,9 +1424,6 @@ def setattr_trait(traito, traitd, obj, name, value):
 
 
 def setattr_python(traito, traitd, obj, name, value):
-    # XXX - the C code for this uses a NULL pointer for value
-    # to indicate that the attribute should be deleted from the dict.
-    # What should we do here?
     dct = obj.__dict__
     if value is NULL:
         del dct[name]
@@ -1358,14 +1432,15 @@ def setattr_python(traito, traitd, obj, name, value):
 
 
 def setattr_event(traito, traitd, obj, name, value):
-    if traitd.c_attrs.validate is not None:
-        value = traitd.c_attrs.validate(traitd, obj, name, value)
+    if value is not NULL:
+        if traitd.c_attrs.validate is not NULL:
+            value = traitd.c_attrs.validate(traitd, obj, name, value)
 
-    tnotifiers = traito.c_attrs.notifiers
-    onotifiers = obj.c_attrs.notifiers
+        tnotifiers = traito.c_attrs.notifiers
+        onotifiers = obj.c_attrs.notifiers
 
-    if has_notifiers(tnotifiers, onotifiers):
-        call_notifiers(tnotifiers, onotifiers, obj, name, Undefined, value)
+        if has_notifiers(tnotifiers, onotifiers):
+            call_notifiers(tnotifiers, onotifiers, obj, name, Undefined, value)
         
 
 def setattr_delegate(traito, traitd, obj, name, value):
@@ -1386,26 +1461,26 @@ def setattr_delegate(traito, traitd, obj, name, value):
        
         itrait_dict = delegate.c_attrs.itrait_dict
         ctrait_dict = delegate.c_attrs.ctrait_dict
-        if itrait_dict is not None:
-            if daname in itrait_dict:
+        try:
+            if (itrait_dict is not NULL) and (daname in itrait_dict):
                 traitd = itrait_dict[daname]
             elif daname in ctrait_dict:
                 traitd = ctrait_dict[daname]
             else:
                 traitd = get_prefix_trait(delegate, daname, 1)
-                if traitd is None: # XXX - can this ever happen?
-                    bad_delegate_error(obj, name)
+        except Exception:
+            bad_delegate_error(obj, name)
                     
         if type(traitd) is not ctrait_type:
             fatal_trait_error()
 
-        if traitd.c_attrs.delegate_attr_name is None:
+        if traitd.c_attrs.delegate_attr_name is NULL:
             if traito.c_attrs.flags & TRAIT_MODIFY_DELEGATE:
                 result = traitd.c_attrs.setattr(traitd, traitd, delegate, daname,
                                                 value)
             else:
                 result = traitd.c_attrs.setattr(traito, traitd, obj, name, value)
-                obj._remove_trait_delegate_listener(name, value)
+                obj._remove_trait_delegate_listener(name, int(value is not NULL))
 
             return result
 
@@ -1418,7 +1493,7 @@ def setattr_disallow(traito, traitd, obj, name, value):
     set_disallow_error(obj, name)
 
 def setattr_readonly(traito, traitd, obj, name, value):
-    if value is None: # XXX - what semantics do we want for deletion. It's a NULL PyObject* in C
+    if value is NULL: # XXX - what semantics do we want for deletion. It's a NULL PyObject* in C
         delete_readonly_error(obj, name)
 
     if traitd.c_attrs.default_value != Undefined:
@@ -1440,25 +1515,25 @@ def setattr_generic(traito, traitd, obj, name, value):
 
 
 def setattr_property0(traito, traitd, obj, name, value):
-    if value is None: # XXX - what semantics do we want for deletion. It's a NULL PyObject* in C
+    if value is NULL: # XXX - what semantics do we want for deletion. It's a NULL PyObject* in C
         set_delete_property_error(obj, name)
     traitd.c_attrs.delegate_prefix()
 
 
 def setattr_property1(traito, traitd, obj, name, value):
-    if value is None: # XXX - what semantics do we want for deletion. It's a NULL PyObject* in C
+    if value is NULL: # XXX - what semantics do we want for deletion. It's a NULL PyObject* in C
         set_delete_property_error(obj, name)
     traitd.c_attrs.delegate_prefix(value)
 
 
 def setattr_property2(traito, traitd, obj, name, value):
-    if value is None: # XXX - what semantics do we want for deletion. It's a NULL PyObject* in C
+    if value is NULL: # XXX - what semantics do we want for deletion. It's a NULL PyObject* in C
         set_delete_property_error(obj, name)
     traitd.c_attrs.delegate_prefix(obj, value)
 
 
 def setattr_property3(traito, traitd, obj, name, value):
-    if value is None: # XXX - what semantics do we want for deletion. It's a NULL PyObject* in C
+    if value is NULL: # XXX - what semantics do we want for deletion. It's a NULL PyObject* in C
         set_delete_property_error(obj, name)
     traitd.c_attrs.delegate_prefix(obj, name, value)
 
@@ -1601,21 +1676,26 @@ def validate_trait_map(trait, obj, name, value):
     # The C-code for this uses PyDict_GetItem and then catches 
     # all exceptions. One of the tests passes a list for `value`
     # hence the need to catch TypeError as well as KeyError.
+    # XXX - shouldnt we just then also catch all exceptions?
     try:
         type_info[1][value]
-    except (KeyError, TypeError):
+    except Exception:#(KeyError, TypeError):
         raise_trait_error(trait, obj, name, value)
 
 
 def validate_trait_prefix_map(trait, obj, name, value):
     """Verifies a Python value is in a specified prefix map (i.e. dictionary)"""
     type_info = trait.c_attrs.py_validate
-    if value in type_info[1]:
-        mapped_value = type_info[1][value]
-        return mapped_value
-    else:
-        # call validator
+    try:
+        return type_info[1][value]
+    except Exception:
         return type_info[2](obj, name, value)
+    #if value in type_info[1]:
+    #    mapped_value = type_info[1][value]
+    #    return mapped_value
+    #else:
+        # call validator
+    #    return type_info[2](obj, name, value)
 
 
 def validate_trait_complex(trait, obj, name, value):
@@ -1746,7 +1826,7 @@ def validate_trait_tuple_check(traits, obj, name, value):
         for i in range(n):
             bitem = value[i]
             itrait = traits[i]
-            if itrait.c_attrs.validate is None:
+            if itrait.c_attrs.validate is NULL:
                 aitem = bitem
             else:
                 # shouldn't need to check for NULL return, as will raise instead
@@ -1847,21 +1927,30 @@ def validate_trait_adapt(trait, obj, name, value):
         args = (value, type, None)
     else:
         args = (value, type)
-    result = adapt(*args)
-    
-    # the C code here is really convoluted... and I think it swallows
-    # errors in the adapt function...
-    if result is not None:
-        if mode > 0 or result is value:
-            return result
-    else:
-        result = validate_implements(*args)
-        if result:
-            return value
+
+    try:
+        result = adapt(*args)
+        if result is not None:
+            if mode > 0 or result is value:
+                return result
+            else:
+                result = validate_implements(*args)
+                if result:
+                    return value
+                else:
+                    raise_trait_error(trait, obj, name, value)
         else:
-            return default_value_for(trait, obj, name)
-        
-    result = validate_implements(*args)
+            result = validate_implements(*args)
+            if result:
+                return value
+            else:
+                try:
+                    return default_value_for(trait, obj, name)
+                except Exception:
+                    return raise_trait_error(trait, obj, name, value)
+    except Exception:
+        result = validate_implements(*args)
+          
     if result:
         return value
     
