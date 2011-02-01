@@ -117,12 +117,11 @@ class CHasTraits(object):
         else:
             trait = get_prefix_trait(self, name, 1)
 
-        c_attrs = trait.c_attrs
-        if ((c_attrs.flags & TRAIT_VALUE_ALLOWED) and
-            isinstance(trait, TraitValue)):
+        if ((trait.c_attrs.flags & TRAIT_VALUE_ALLOWED) and
+            isinstance(value, TraitValue)):
             setattr_value(trait, self, name, value)
         else:
-            c_attrs.setattr(trait, trait, self, name, value)
+            trait.c_attrs.setattr(trait, trait, self, name, value)
 
     def __getattribute__(self, name):
         __dict__ = object.__getattribute__(self, '__dict__')
@@ -1334,9 +1333,6 @@ def setattr_value(trait, obj, name, value):
 
 def setattr_trait(traito, traitd, obj, name, value):
     # XXX - this may be wrong
-    # XXX - get rid of this closure which replaces a goto
-    def notify():
-        return
 
     dct = obj.__dict__
     changed = traitd.c_attrs.flags & TRAIT_NO_VALUE_TEST
@@ -1353,10 +1349,10 @@ def setattr_trait(traito, traitd, obj, name, value):
             if (tnotifiers is not NULL) or (onotifiers is not NULL):
                 value = traito.c_attrs.getattr(traito, obj, name)
                 if not changed:
-                    changed = (old_value != value)
+                    changed = (old_value is not value)
                     if changed and not (traitd.c_attrs.flags & TRAIT_OBJECT_IDENTITY):
                         try:
-                            changed = cmp(old_value, value)
+                            changed = (old_value != value)
                         except Exception:
                             changed = -1
 
@@ -1405,7 +1401,7 @@ def setattr_trait(traito, traitd, obj, name, value):
                 try:
                     changed = (old_value != value)
                 except Exception: # ctraits.c really does this on line 2588
-                    change = -1
+                    changed = -1
 
     dct[name] = new_value
 
@@ -1679,6 +1675,7 @@ def validate_trait_map(trait, obj, name, value):
     # XXX - shouldnt we just then also catch all exceptions?
     try:
         type_info[1][value]
+        return value
     except Exception:#(KeyError, TypeError):
         raise_trait_error(trait, obj, name, value)
 
