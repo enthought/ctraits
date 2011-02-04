@@ -122,6 +122,9 @@ class CHasTraits(object):
             setattr_value(trait, self, name, value)
         else:
             trait.c_attrs.setattr(trait, trait, self, name, value)
+    
+    def __delattr__(self, name):
+        setattr(self, name, NULL)
 
     def __getattribute__(self, name):
         __dict__ = object.__getattribute__(self, '__dict__')
