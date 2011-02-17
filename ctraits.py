@@ -780,7 +780,7 @@ class cTrait(object):
     def setattr_original_value(self, original_value):
         """ _trait_setattr_original_value """
         c_attrs = self.c_attrs
-        if not original_value:
+        if original_value:
             c_attrs.flags |= TRAIT_SETATTR_ORIGINAL_VALUE
         else:
             c_attrs.flags &= (~TRAIT_SETATTR_ORIGINAL_VALUE)
@@ -1700,7 +1700,7 @@ def validate_trait_prefix_map(trait, obj, name, value):
 
 def validate_trait_complex(trait, obj, name, value):
     """Verifies a Python value satisifies a complex trait definition"""
-    
+     
     list_type_info = trait.c_attrs.py_validate[1]
     
     for type_info in list_type_info:
@@ -1708,12 +1708,17 @@ def validate_trait_complex(trait, obj, name, value):
         if switch == 0:
             # type check
             kind = len(type_info)
-            if (kind == 3 and value == None) or isinstance(value, type_info[-1]):
+            if (kind == 3 and value is None) or (type(value) == type_info[-1]):
+                return value
+            break
+        elif switch == 1:
+            kind = len(type_info)
+            if (kind == 3 and value is None) or isinstance(value, type_info[-1]):
                 return value
             break
         elif switch == 2:
             # self type check
-            if (len(type_info) == 2 and value is None) or isinstance(value, type(obj)):
+            if (len(type_info) == 2 and value is None) or (type(value) == type(obj)):
                 return value
             break
         elif switch == 3:
@@ -1780,7 +1785,10 @@ def validate_trait_complex(trait, obj, name, value):
             return type_info[1].slow_validate(obj, name, value)
         elif switch == 9:
             # Tuple item check
-            result = validate_trait_tuple_check(type_info[1], obj, name, value)
+            try:
+                result = validate_trait_tuple_check(type_info[1], obj, name, value)
+            except Exception:
+                break
             if result is not None:
                 return result
             break
@@ -1798,23 +1806,80 @@ def validate_trait_complex(trait, obj, name, value):
             # Coercable type check
             # XXX this code is largely the same as the underlying type check
             # should remove duplication/break out into function
+            if type(value) == type_info[1]:
+                return value
+            
+            k = len(type_info)
+            for j in range(2, k):
+                type2 = type_info[j]
+                if type2 is None:
+                    break
+                if type(value) == type2:
+                    return value
+
+            for j in range(j+1, k):
+                type2 = type_info[j]
+                if type(value) == type2:
+                    return type_info[1](value)
             break
         elif switch == 12:
             # Castable type check
-            type = type_info[1]
-            if isinstance(value, type):
+            type_ = type_info[1]
+            if isinstance(value, type_):
                 return value
             else:
-                return type(value)
+                try:
+                    return type_(value)
+                except Exception:
+                    break
         elif switch == 13:
             # function validator check
-            result = type_info[1](obj, name, value)
+            try:
+                return type_info[1](obj, name, value)
+            except Exception:
+                break
         # 14 is python validator check
         # 15-18 are setattr validate checks
         elif switch == 19:
             # PyProtocols 'adapt' check
-            # XXX not converting just yet
-            break
+            if value is None:
+                if type_info[3]:
+                    return value
+                break
+            
+            type_ = type_info[1]
+            mode = type_info[2]
+            if mode == 2:
+                args = (value, type_, None)
+            else:
+                args = (value, type_)
+
+            try:
+                result = adapt(*args)
+            except Exception:
+                result = validate_implements(*args)
+                if result:
+                    return value
+                break
+
+            if result is not None:
+                if (mode == 0) and (result is not value):
+                    result = validate_implements(*args)
+                    if result:
+                        return value
+                    break
+                return result
+            
+            result = validate_implements(*args)
+            if result:
+                return value
+
+            try:
+                result = default_value_for(trait, obj, name)
+                return result
+            except Exception:
+                break
+
     else:
         raise_trait_error(trait, obj, name, value)
 
@@ -1930,32 +1995,30 @@ def validate_trait_adapt(trait, obj, name, value):
 
     try:
         result = adapt(*args)
-        if result is not None:
-            if mode > 0 or result is value:
-                return result
-            else:
-                result = validate_implements(*args)
-                if result:
-                    return value
-                else:
-                    raise_trait_error(trait, obj, name, value)
-        else:
-            result = validate_implements(*args)
-            if result:
-                return value
-            else:
-                try:
-                    return default_value_for(trait, obj, name)
-                except Exception:
-                    return raise_trait_error(trait, obj, name, value)
     except Exception:
         result = validate_implements(*args)
-          
+        if result:
+            return value
+        raise_trait_error(trait, obj, name, value)
+
+    if result is not None:
+        if (mode > 0) or (result is value):
+            return result
+        result = validate_implements(*args)
+        if result:
+            return value
+        raise_trait_error(trait, obj, name, value)
+        
+    
+    result = validate_implements(*args)
     if result:
         return value
-    
-    raise_trait_error(trait, obj, name, value)
             
+    try:
+        return default_value_for(trait, obj, name)
+    except Exception:
+        return raise_trait_error(trait, obj, name, value)
+                
     
 
 validate_handlers = [validate_trait_type, validate_trait_instance,
