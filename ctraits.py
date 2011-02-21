@@ -789,7 +789,7 @@ class cTrait(object):
     def post_setattr_original_value(self, original_value):
         """ _trait_post_setattr_original_value """
         c_attrs = self.c_attrs
-        if not original_value:
+        if original_value:
             c_attrs.flags |= TRAIT_POST_SETATTR_ORIGINAL_VALUE
         else:
             c_attrs.flags &= (~TRAIT_POST_SETATTR_ORIGINAL_VALUE)
@@ -798,7 +798,7 @@ class cTrait(object):
     def is_mapped(self, is_mapped):
         """ _trait_is_mapped """
         c_attrs = self.c_attrs
-        if not is_mapped:
+        if is_mapped:
             c_attrs.flags |= TRAIT_IS_MAPPED
         else:
             c_attrs.flags &= (~TRAIT_IS_MAPPED)
@@ -1042,7 +1042,11 @@ def default_value_for(trait, obj, name):
         res = dv[0](*dv[1], **kw)
     elif dvt == 8:
         temp = c_attrs.default_value(obj)
-        res = c_attrs.validate(trait, obj, name, temp)
+        if c_attrs.validate is not NULL:
+            res = c_attrs.validate(trait, obj, name, temp)
+
+        else:
+            res = temp
     elif dvt == 9:
         res = TraitSetObject(c_attrs.handler, obj, name, c_attrs.default_value)
     else:
@@ -1710,17 +1714,17 @@ def validate_trait_complex(trait, obj, name, value):
             kind = len(type_info)
             if (kind == 3 and value is None) or (type(value) == type_info[-1]):
                 return value
-            break
+            continue
         elif switch == 1:
             kind = len(type_info)
             if (kind == 3 and value is None) or isinstance(value, type_info[-1]):
                 return value
-            break
+            continue
         elif switch == 2:
             # self type check
             if (len(type_info) == 2 and value is None) or (type(value) == type(obj)):
                 return value
-            break
+            continue
         elif switch == 3:
             # integer range check
             if isinstance(value, int):
@@ -1729,25 +1733,25 @@ def validate_trait_complex(trait, obj, name, value):
                 if low is not None:
                     if (exclude_mask & 1) != 0:
                         if int_value <= int(low):
-                            break
+                            continue
                     else:
                         if int_value < int(low):
-                            break
+                            continue
                 if high is not None:
                     if (exclude_mask & 2) != 0:
                         if int_value >= int(high):
-                            break
+                            continue
                     else:
                         if int_value > int(high):
-                            break
+                            continue
                 return value
-            break
+            continue
         elif switch == 4:
             # floating point range check
             if not isinstance(value, float):
                 # XXX drop this, and just coerce to float?
                 if not isinstance(value, int):
-                    break
+                    continue
                 float_value = value = float(value)
             else:
                 # XXX dumb conversion from C -> Python here
@@ -1757,29 +1761,29 @@ def validate_trait_complex(trait, obj, name, value):
             if low is not None:
                 if exclude_mask & 1:
                     if float_value <= low:
-                        break
+                        continue
                 else:
                     if float_value < low:
-                        break
+                        continue
         
             if high is not None:
                 if exclude_mask & 2:
                     if float_value >= high:
-                        break
+                        continue
                 else:
                     if float_value > high:
-                        break
+                        continue
             return value
         elif switch == 5:
             # enumerated item check
             if value in type_info[1]:
                 return value
-            break
+            continue
         elif switch == 6:
             # mapped item check
             if value in type_info[1]:
                 return value
-            break
+            continue
         elif switch == 8:
             # Perform 'slow' validate check
             return type_info[1].slow_validate(obj, name, value)
@@ -1788,10 +1792,10 @@ def validate_trait_complex(trait, obj, name, value):
             try:
                 result = validate_trait_tuple_check(type_info[1], obj, name, value)
             except Exception:
-                break
+                continue
             if result is not None:
                 return result
-            break
+            continue
         elif switch == 10:
             # Prefix map item check
             if value in type_info[1]:
@@ -1801,7 +1805,7 @@ def validate_trait_complex(trait, obj, name, value):
             try:
                 return type_info[2](obj, name, value)
             except Exception:
-                break
+                continue
         elif switch == 11:
             # Coercable type check
             # XXX this code is largely the same as the underlying type check
@@ -1813,7 +1817,7 @@ def validate_trait_complex(trait, obj, name, value):
             for j in range(2, k):
                 type2 = type_info[j]
                 if type2 is None:
-                    break
+                    continue
                 if type(value) == type2:
                     return value
 
@@ -1821,7 +1825,7 @@ def validate_trait_complex(trait, obj, name, value):
                 type2 = type_info[j]
                 if type(value) == type2:
                     return type_info[1](value)
-            break
+            continue
         elif switch == 12:
             # Castable type check
             type_ = type_info[1]
@@ -1831,13 +1835,13 @@ def validate_trait_complex(trait, obj, name, value):
                 try:
                     return type_(value)
                 except Exception:
-                    break
+                    continue
         elif switch == 13:
             # function validator check
             try:
                 return type_info[1](obj, name, value)
             except Exception:
-                break
+                continue
         # 14 is python validator check
         # 15-18 are setattr validate checks
         elif switch == 19:
@@ -1845,7 +1849,7 @@ def validate_trait_complex(trait, obj, name, value):
             if value is None:
                 if type_info[3]:
                     return value
-                break
+                continue
             
             type_ = type_info[1]
             mode = type_info[2]
@@ -1860,14 +1864,14 @@ def validate_trait_complex(trait, obj, name, value):
                 result = validate_implements(*args)
                 if result:
                     return value
-                break
+                continue
 
             if result is not None:
                 if (mode == 0) and (result is not value):
                     result = validate_implements(*args)
                     if result:
                         return value
-                    break
+                    continue
                 return result
             
             result = validate_implements(*args)
@@ -1878,7 +1882,7 @@ def validate_trait_complex(trait, obj, name, value):
                 result = default_value_for(trait, obj, name)
                 return result
             except Exception:
-                break
+                continue
 
     else:
         raise_trait_error(trait, obj, name, value)
