@@ -1,3 +1,9 @@
+This package is no longer maintained, and no current projects should rely on it.
+If you encounter projects that still depend on enthought/ctraits, please open issues
+against those projects.
+
+----
+
 ctraits.py
 ==========
 
